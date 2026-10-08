@@ -7,6 +7,23 @@
 set -euo pipefail
 
 TEST_NAME=focus
+
+# config.def.zon with two bindings for the test: Super+F9 for the float
+# layout and Super+F10 for the tile layout.
+TEST_KWM_CONFIG=$(python3 - "$TEST_DEFAULT_CONFIG" <<'PY'
+import sys
+text = open(sys.argv[1]).read()
+key = "        .key = .{\n"
+assert key in text
+bindings = "".join(
+    f'            .{{ .keysym = "{k}", .modifiers = .{{ .mod4 = true }}, '
+    f'.event = .{{ .click = .{{ .pressed = .{{ .switch_layout = .{{ .layout = .{layout} }} }} }} }} }},\n'
+    for k, layout in (("F9", "float"), ("F10", "tile"))
+)
+print(text.replace(key, key + bindings, 1), end="")
+PY
+)
+
 # shellcheck source=test-lib.sh
 source "$TEST_LIB"
 
@@ -43,6 +60,40 @@ expect_state b " activated=1 " "during the drag, the pointer gives the focus of 
 input release
 expect_exit a "the window of the tab closes after the drop"
 expect_state b "^maximized=1 activated=1 keyboard=1 " "after the drop, the other window gets the keyboard"
+close b
+
+# All windows float: the pointer over a window does not focus it, a click
+# does. Refer to src/kwm/hover_focus.zig. In the float layout, the windows
+# stay where the tile layout put them. The pointer waits on the bar.
+input move 640 5
+open a
+expect_state a " activated=1 keyboard=1 " "the window has the focus"
+open b
+expect_state b " activated=1 keyboard=1 " "the new window has the focus"
+# The main window of the tile layout is at the left, and it is wider.
+if [ "$(sed -E 's/.* width=([0-9]+) .*/\1/' "$work/a.state")" -gt \
+     "$(sed -E 's/.* width=([0-9]+) .*/\1/' "$work/b.state")" ]; then
+  a_x=$left_x b_x=$right_x
+else
+  a_x=$right_x b_x=$left_x
+fi
+wtype -s 200 -M logo -s 100 -k F9 -s 100 -m logo
+sleep 1
+input move "$a_x" "$y"
+input move $((a_x + 20)) "$y"
+sleep 1
+expect_state a " activated=0 keyboard=0 " "when all windows float, the pointer does not focus a window"
+expect_state b " activated=1 keyboard=1 " "when all windows float, the focused window keeps the focus"
+input press
+input release
+expect_state a " activated=1 keyboard=1 " "when all windows float, a click focuses the window"
+
+# Tiled windows again: the pointer focuses a window.
+wtype -s 200 -M logo -s 100 -k F10 -s 100 -m logo
+sleep 1
+input move "$b_x" "$y"
+input move $((b_x + 20)) "$y"
+expect_state b " activated=1 keyboard=1 " "with tiled windows, the pointer focuses a window"
 
 if [ "$failed" -ne 0 ]; then
   echo "kwm-test-focus: the log of kwm:" >&2

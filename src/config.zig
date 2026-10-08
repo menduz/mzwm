@@ -50,6 +50,9 @@ pub const Config = struct {
 
     single_tagset: bool,
 
+    /// The pointer over a window focuses it. In a workspace where all
+    /// windows float, only a click focuses a window. Refer to
+    /// src/kwm/hover_focus.zig.
     sloppy_focus: bool,
 
     /// No gap at the edges of the output when one tiled window fills it, and

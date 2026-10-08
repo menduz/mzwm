@@ -244,6 +244,8 @@
 
     .single_tagset = false,
 
+    // the pointer over a window focuses it
+    // in a workspace where all windows float, only a click focuses a window
     .sloppy_focus = true,
 
     // no gap at the edges of the output when one tiled window fills it,

@@ -27,6 +27,7 @@ const ShellSurface = @import("shell_surface.zig");
 const floating_zig = @import("floating.zig");
 const refocus_zig = @import("refocus.zig");
 const decoration_zig = @import("decoration.zig");
+const hover_focus = @import("hover_focus.zig");
 const SandboxLabel = if (build_options.bar_enabled) @import("sandbox_label.zig") else void;
 const TitleBar = if (build_options.bar_enabled) @import("title_bar.zig") else void;
 
@@ -232,9 +233,12 @@ pub fn manage(self: *Self) void {
 
         const window = self.window_below_pointer.window.?;
 
-        // A collapsed window of the deck layout opens only with a click or
-        // with the focus keys.
-        if (!window.collapsed) ctx.focus(window, window.managed_by_layout());
+        // Refer to hover_focus.zig: a collapsed window of the deck layout,
+        // or a workspace where all windows float, needs a click.
+        if (hover_focus.focuses(ctx.cfg.sloppy_focus, .{
+            .collapsed = window.collapsed,
+            .tiled_windows = tiled_windows(window),
+        })) ctx.focus(window, window.managed_by_layout());
     }
 
     self.handle_actions();
@@ -907,6 +911,19 @@ fn handle_actions(self: *Self) void {
             },
         }
     }
+}
+
+
+/// The number of visible windows on the output of `window` that the layout
+/// places.
+fn tiled_windows(window: *Window) usize {
+    const output = window.output orelse return 0;
+    var count: usize = 0;
+    var it = ctx.windows.safeIterator(.forward);
+    while (it.next()) |w| {
+        if (w.is_visible_in(output) and w.managed_by_layout()) count += 1;
+    }
+    return count;
 }
 
 
