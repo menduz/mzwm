@@ -232,7 +232,9 @@ pub fn manage(self: *Self) void {
 
         const window = self.window_below_pointer.window.?;
 
-        ctx.focus(window, window.managed_by_layout());
+        // A collapsed window of the deck layout opens only with a click or
+        // with the focus keys.
+        if (!window.collapsed) ctx.focus(window, window.managed_by_layout());
     }
 
     self.handle_actions();

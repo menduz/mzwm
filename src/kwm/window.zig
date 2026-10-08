@@ -106,6 +106,16 @@ clip_state: enum {
     cliped,
 } = .unknow,
 geometry_undefined: bool = false,
+/// The deck layout shows only the title bar of this window: the window is
+/// clipped, and the pointer does not focus it (sloppy_focus). Each manage
+/// sequence sets it again. Refer to layout/accordion.zig.
+collapsed: bool = false,
+/// The collapsed window also shows the border below its title bar: the last
+/// window of the deck.
+collapsed_bottom: bool = false,
+/// kwm hides the contents of the window with a content clip box (a collapsed
+/// window with a title bar).
+content_hidden: bool = false,
 
 tag: u32 = 1,
 pid: i32 = 0,
@@ -720,7 +730,8 @@ fn render_raised_border(self: *Self) void {
         }
         self.raised_border.?.render_flat(
             self.width,
-            self.height - self.title_inset(),
+            // A collapsed window of the deck: around the title bar only.
+            if (self.collapsed) 0 else self.height - self.title_inset(),
             border,
             decoration_zig.height,
             self.border_color(if (self.border_focused) ctx.cfg.border.color.focus else ctx.cfg.border.color.unfocus),
@@ -775,8 +786,12 @@ fn render_raised_border(self: *Self) void {
     // A maximized window fills the output, less the border. A tiled window
     // with a title bar has it at the top of its place, and a floating window
     // above it: the border goes around the window and the title bar.
+    // A collapsed window of the deck shows only its title bar: the border goes
+    // around the title bar.
     const width, const height = if (self.maximize)
         .{ self.output.?.exclusive_width() - 2 * border, self.output.?.exclusive_height() - 2 * border }
+    else if (self.collapsed and self.has_title_bar())
+        .{ self.width, 0 }
     else
         .{ self.width, self.height - self.title_inset() };
     const top: i32 = if (self.has_title_bar()) decoration_zig.height else 0;
@@ -1419,7 +1434,32 @@ pub fn render(self: *Self) void {
     var right = self.x + self.width + ctx.cfg.border.width;
     var top = self.y - ctx.cfg.border.width - self.title_above();
     var bottom = self.y + self.height + ctx.cfg.border.width;
-    if (
+    // A collapsed window with a title bar shows no contents: the content clip
+    // box does not meet the clip box below, thus river hides the contents.
+    // The border below the title bar then shows.
+    const hide_content = self.collapsed and self.has_title_bar();
+    if (hide_content != self.content_hidden) {
+        self.content_hidden = hide_content;
+        if (hide_content) {
+            self.rwm_window.setContentClipBox(0, 2 * ctx.cfg.border.width + 1, 1, 1);
+        } else {
+            self.rwm_window.setContentClipBox(0, 0, 0, 0);
+        }
+    }
+
+    if (self.collapsed) {
+        // Only the border above the window and the title bar (or the top of
+        // the window for a client that draws its own title bar), and for the
+        // last window of the deck also the border below the title bar.
+        const border = ctx.cfg.border.width;
+        self.rwm_window.setClipBox(
+            -offset_x - border,
+            -offset_y - border,
+            self.width + 2 * border,
+            decoration_zig.height + border + if (self.collapsed_bottom) border else 0,
+        );
+        self.clip_state = .cliped;
+    } else if (
         left < 0
         or top < 0
         or right > self.output.?.width

@@ -353,6 +353,17 @@ pub fn cycle_layout(self: *Self, direction: types.Direction) void {
 
 
 pub fn manage(self: *Self) void {
+    // The deck layout collapses windows again in each manage sequence.
+    {
+        var it = ctx.windows.safeIterator(.forward);
+        while (it.next()) |window| {
+            if (window.output == self) {
+                window.collapsed = false;
+                window.collapsed_bottom = false;
+            }
+        }
+    }
+
     switch (self.current_layout()) {
         .float => {},
         inline else => |layout| layout.arrange(self) catch |err| {

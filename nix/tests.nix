@@ -85,6 +85,7 @@ let
         export TEST_LIB=${./test-lib.sh}
         export TEST_INPUT=${./test-input.py}
         export TEST_PORTAL=${./test-portal.py}
+        export TEST_CAPTIONS=${./test-captions.py}
         export TEST_DEFAULT_CONFIG=${../config.def.zon}
         export PYTHONPATH=${protocols}
         exec bash ${./. + "/test-${name}.sh"} "$@"
@@ -109,9 +110,10 @@ let
   bar = mkTest "bar";
   title-bar = mkTest "title-bar";
   theme = mkTest "theme";
+  deck = mkTest "deck";
 in
 {
-  inherit maximize focus bar title-bar theme;
+  inherit maximize focus bar title-bar theme deck;
 
   checks = {
     maximize = mkCheck "maximize" "The maximized state of the windows of kwm";
@@ -119,5 +121,6 @@ in
     bar = mkCheck "bar" "A change of the status of the bar needs no manage sequence";
     title-bar = mkCheck "title-bar" "The title bar of a window with server side decorations";
     theme = mkCheck "theme" "kwm follows the GTK theme of the settings portal";
+    deck = mkCheck "deck" "The stack of the deck layout is a stack of cards";
   };
 }

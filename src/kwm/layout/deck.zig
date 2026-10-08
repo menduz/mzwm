@@ -10,6 +10,8 @@ const Context = @import("../context.zig");
 const Output = @import("../output.zig");
 const Layout = @import("../layout.zig");
 const Window = @import("../window.zig");
+const accordion = @import("accordion.zig");
+const decoration = @import("../decoration.zig");
 
 pub const MasterLocation = types.LayoutMasterLocation;
 
@@ -23,6 +25,12 @@ outer_gap: i32,
 master_location: MasterLocation,
 
 
+/// The main window (the master) at the left, and the other windows as an
+/// accordion in the stack area: the window of the stack with the last focus
+/// is open, and the other ones show only their title bars. A click on a title
+/// bar or the focus keys (focus_iter) open a window; the pointer over a title
+/// bar does not. zoom (Alt+Return) swaps the open window and the main window.
+/// Refer to accordion.zig.
 pub fn arrange(self: *const Self, output: *Output) !void {
     log.debug("<{*}> arrange windows in output {*}", .{ self, output });
 
@@ -39,8 +47,9 @@ pub fn arrange(self: *const Self, output: *Output) !void {
             }
         }
 
+        // The stack keeps its order.
         {
-            var it = ctx.focus_stack.safeIterator(.forward);
+            var it = ctx.windows.safeIterator(.forward);
             while (it.next()) |window| {
                 const masters = windows.items[0..@intCast(self.nmaster)];
                 if (mem.containsAtLeastScalar(*Window, masters, 1, window)) continue;
@@ -87,41 +96,60 @@ pub fn arrange(self: *const Self, output: *Output) !void {
     }
 
     for (0.., windows.items) |i, window| {
-        var x: i32 = undefined;
-        var y: i32 = undefined;
-        var w: i32 = undefined;
-        var h: i32 = undefined;
-        if (i < nmaster) {
-            x = 0;
-            y = (@as(i32, @intCast(i)) * master_height) + if (i > 0) master_remain + self.inner_gap else 0;
-            w = if (nstack > 0) master_width - @divFloor(self.inner_gap, 2) else master_width;
-            h = (master_height + if (i == 0) master_remain else 0) - if (i > 0) self.inner_gap else 0;
-        } else if (i == nmaster) {
-            x = master_width + @divFloor(self.inner_gap, 2);
-            y = 0;
-            w = stack_width - @divFloor(self.inner_gap, 2);
-            h = stack_height;
-        } else window.hide();
-        w = @max(0, w);
-        h = @max(0, h);
-
-        switch (self.master_location) {
-            .left => {
-                window.unbound_move(x+outer_gap, y+outer_gap);
-                window.unbound_resize(w, h);
-            },
-            .right => {
-                window.unbound_move(usable_width-x-w+outer_gap, y+outer_gap);
-                window.unbound_resize(w, h);
-            },
-            .top => {
-                window.unbound_move(y+outer_gap, x+outer_gap);
-                window.unbound_resize(h, w);
-            },
-            .bottom => {
-                window.unbound_move(y+outer_gap, usable_width-x-w+outer_gap);
-                window.unbound_resize(h, w);
-            }
-        }
+        if (i >= nmaster) break;
+        const x: i32 = 0;
+        const y: i32 = (@as(i32, @intCast(i)) * master_height) + if (i > 0) master_remain + self.inner_gap else 0;
+        const w: i32 = @max(0, if (nstack > 0) master_width - @divFloor(self.inner_gap, 2) else master_width);
+        const h: i32 = @max(0, (master_height + if (i == 0) master_remain else 0) - if (i > 0) self.inner_gap else 0);
+        const r = self.to_output(usable_width, outer_gap, .{ .x = x, .y = y, .width = w, .height = h });
+        window.unbound_move(r.x, r.y);
+        window.unbound_resize(r.width, r.height);
     }
+    if (nstack <= 0) return;
+
+    const area = self.to_output(usable_width, outer_gap, .{
+        .x = master_width + @divFloor(self.inner_gap, 2),
+        .y = 0,
+        .width = @max(0, stack_width - @divFloor(self.inner_gap, 2)),
+        .height = stack_height,
+    });
+    const stack = windows.items[@intCast(nmaster)..];
+
+    // The open window: the window of the stack with the last focus.
+    const open = blk: {
+        var it = ctx.focus_stack.safeIterator(.forward);
+        while (it.next()) |window| {
+            if (mem.indexOfScalar(*Window, stack, window)) |index| break :blk index;
+        }
+        break :blk 0;
+    };
+    for (0.., stack) |k, window| {
+        const p = accordion.place(area, stack.len, k, open, decoration.height, ctx.cfg.border.width);
+        window.unbound_move(p.rect.x, p.rect.y);
+        window.unbound_resize(p.rect.width, p.rect.height);
+        window.collapsed = p.collapsed;
+        window.collapsed_bottom = p.bottom_border;
+    }
+
+    // The contents of a collapsed window are below the open window: the
+    // collapsed windows go on top of the tiled windows first, then the open
+    // window.
+    if (stack.len > 1) {
+        for (stack) |window| {
+            if (window.collapsed) window.place(.{ .below = ctx.layer_marker.rwm_shell_surface_node });
+        }
+        stack[open].place(.{ .below = ctx.layer_marker.rwm_shell_surface_node });
+    }
+}
+
+
+/// A rectangle of the layout (the master at the left) on the output, at the
+/// master location.
+fn to_output(self: *const Self, usable_width: i32, outer_gap: i32, r: accordion.Rect) accordion.Rect {
+    return switch (self.master_location) {
+        .left => .{ .x = r.x + outer_gap, .y = r.y + outer_gap, .width = r.width, .height = r.height },
+        .right => .{ .x = usable_width - r.x - r.width + outer_gap, .y = r.y + outer_gap, .width = r.width, .height = r.height },
+        .top => .{ .x = r.y + outer_gap, .y = r.x + outer_gap, .width = r.height, .height = r.width },
+        .bottom => .{ .x = r.y + outer_gap, .y = usable_width - r.x - r.width + outer_gap, .width = r.height, .height = r.width },
+    };
 }
