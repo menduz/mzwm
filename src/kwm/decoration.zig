@@ -56,6 +56,18 @@ pub fn has_title_bar(window: Window) bool {
 }
 
 
+/// The space on each side between a tiled window with client side
+/// decorations and its place in the layout: `border.csd_margin` of the
+/// configuration. With the raised style, the outline of 1 pixel is the outside
+/// pixel of the border and the margin (3 pixels or more). A window without
+/// the outline takes that pixel: the margin is 1 pixel less.
+pub fn csd_margin(margin: i32, border: i32, raised: bool, outline: bool) i32 {
+    if (margin <= 0) return 0;
+    if (raised and !outline and border + margin >= 3) return margin - 1;
+    return margin;
+}
+
+
 /// A press on the title bar or on the border of a floating window moves the
 /// window, as the pointer_move binding does. The layout places a tiled
 /// window, and a maximized or fullscreen window does not move.
@@ -264,6 +276,25 @@ test "button_pixel: the edges of the pressed button are the same at the top and 
     // The bottom and the right edges are the highlight.
     for (0..button_width) |x| try testing.expectEqual(Pixel.highlight, button_pixel(true, x, button_height - 1));
     for (0..button_height) |y| try testing.expectEqual(Pixel.highlight, button_pixel(true, button_width - 1, y));
+}
+
+test "csd_margin: a window without the outline takes the pixel of the outline" {
+    // A GTK frame of 4 pixels: a border of 3 pixels and a margin of 2. The
+    // outline is the outside pixel.
+    try testing.expectEqual(@as(i32, 2), csd_margin(2, 3, true, true));
+    // Without the outline, the frame of 4 pixels fills the border of 3
+    // pixels and a margin of 1.
+    try testing.expectEqual(@as(i32, 1), csd_margin(2, 3, true, false));
+}
+
+test "csd_margin: the configuration gives the margin in the other cases" {
+    // The flat style has no outline of kwm.
+    try testing.expectEqual(@as(i32, 2), csd_margin(2, 3, false, false));
+    // Less than 3 pixels: the raised border has no outline.
+    try testing.expectEqual(@as(i32, 1), csd_margin(1, 1, true, false));
+    // No margin.
+    try testing.expectEqual(@as(i32, 0), csd_margin(0, 3, true, false));
+    try testing.expectEqual(@as(i32, 0), csd_margin(-1, 3, true, true));
 }
 
 test "drag_moves: only a floating window that is not maximized or fullscreen" {

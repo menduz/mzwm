@@ -606,11 +606,18 @@ fn title_above(self: *const Self) i32 {
 /// The space on each side between a tiled window with client side decorations
 /// and its place in the layout. The frame of the client goes into it. A
 /// maximized or fullscreen window has no frame. A tiled window that fills the
-/// output is maximized for the client, thus it has no frame either.
+/// output is maximized for the client, thus it has no frame either. A window
+/// without the outline takes the pixel of the outline. Refer to
+/// decoration.zig.
 fn csd_margin(self: *const Self) i32 {
     if (!self.uses_csd() or !self.managed_by_layout()) return 0;
     if (self.maximize or self.fullscreen != .none or self.fills_output()) return 0;
-    return ctx.cfg.border.csd_margin;
+    return decoration_zig.csd_margin(
+        ctx.cfg.border.csd_margin,
+        ctx.cfg.border.width,
+        ctx.cfg.border.style == .raised,
+        self.shows_outline(),
+    );
 }
 
 

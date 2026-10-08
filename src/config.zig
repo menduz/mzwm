@@ -93,7 +93,9 @@ pub const Config = struct {
         /// the raised style and a value more than 0, kwm draws the outline
         /// of the border around such a window, and no edges. Example: a GTK
         /// frame of 4 pixels has its two edges in a border of 3 pixels with
-        /// a margin of 2.
+        /// a margin of 2. A window without the outline (refer to
+        /// `raised.outline`) takes the pixel of the outline: its margin is 1
+        /// pixel less.
         csd_margin: i32 = 0,
         /// .flat: the compositor draws the border in `color.focus` or
         /// `color.unfocus`.

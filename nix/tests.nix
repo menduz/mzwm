@@ -125,6 +125,7 @@ let
     # The test of the theme also looks at the desktop color.
     theme = mkTestWith kwmWithBackground "theme";
     deck = mkTest "deck";
+    csd-margin = mkTest "csd-margin";
   };
 in
 tests
@@ -137,5 +138,6 @@ tests
     title-bar = mkCheck "title-bar" "The title bar of a window with server side decorations";
     theme = mkCheck "theme" "kwm follows the GTK theme of the settings portal, also for the desktop color";
     deck = mkCheck "deck" "The stack of the deck layout is an accordion";
+    csd-margin = mkCheck "csd-margin" "The margin of a window with client side decorations";
   };
 }

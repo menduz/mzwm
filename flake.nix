@@ -78,6 +78,7 @@
           test-title-bar = b.tests.title-bar;
           test-theme = b.tests.theme;
           test-deck = b.tests.deck;
+          test-csd-margin = b.tests.csd-margin;
         }
       );
 
