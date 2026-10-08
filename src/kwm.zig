@@ -177,6 +177,7 @@ test {
     _ = @import("kwm/bar_update.zig");
     _ = @import("kwm/layout/accordion.zig");
     _ = @import("kwm/decoration.zig");
+    _ = @import("kwm/desktop.zig");
     _ = @import("kwm/floating.zig");
     _ = @import("kwm/maximize.zig");
     _ = @import("kwm/portal_setting.zig");

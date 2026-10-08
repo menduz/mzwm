@@ -20,6 +20,7 @@ const types = @import("types.zig");
 const render_ = @import("render.zig");
 const sandbox = @import("sandbox.zig");
 const bar_update = @import("bar_update.zig");
+const desktop = @import("desktop.zig");
 const binding = @import("binding.zig");
 const Context = @import("context.zig");
 const Seat = @import("seat.zig");
@@ -550,7 +551,9 @@ fn render_static_component(self: *Self) void {
 
     const scheme = ctx.cfg.bar.get_scheme(.tags);
     const select_fg = render_.utils.color(scheme.select.fg);
-    const select_bg = render_.utils.color(scheme.select.bg);
+    const select_bg = render_.utils.color(
+        desktop.select_bg(scheme.select.bg, ctx.desktop_color(), area.select_bg_desktop),
+    );
     const normal_fg = render_.utils.color(scheme.normal.fg);
     const normal_bg = render_.utils.color(scheme.normal.bg);
     const empty_fg = if (area.empty_fg) |fg| render_.utils.color(fg) else null;

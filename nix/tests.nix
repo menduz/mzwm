@@ -52,14 +52,24 @@ let
           ${wlroots.src}/protocol/virtual-keyboard-unstable-v1.xml
       '';
 
+  # kwm with the solid background, for the tests of the desktop color. The
+  # package of the flake has no background. The tests of the package ran
+  # already.
+  kwmWithBackground = kwm.overrideAttrs (old: {
+    zigBuildFlags = map (
+      flag: if flag == "-Dbackground=false" then "-Dbackground=true" else flag
+    ) old.zigBuildFlags;
+    doCheck = false;
+  });
+
   # The command kwm-test-<name> runs test-<name>.sh in the environment of the
-  # tests.
-  mkTest =
-    name:
+  # tests, with the kwm package `kwmPackage`.
+  mkTestWith =
+    kwmPackage: name:
     writeShellApplication {
       name = "kwm-test-${name}";
       runtimeInputs = [
-        kwm
+        kwmPackage
         river
         dbus
         python
@@ -92,12 +102,14 @@ let
       '';
     };
 
+  mkTest = mkTestWith kwm;
+
   # A check runs the test in the sandbox (`nix flake check`).
   mkCheck =
     name: description:
     runCommand "kwm-test-${name}"
       {
-        nativeBuildInputs = [ (mkTest name) ];
+        nativeBuildInputs = [ tests.${name} ];
         meta.description = description;
       }
       ''
@@ -105,22 +117,25 @@ let
         touch "$out"
       '';
 
-  maximize = mkTest "maximize";
-  focus = mkTest "focus";
-  bar = mkTest "bar";
-  title-bar = mkTest "title-bar";
-  theme = mkTest "theme";
-  deck = mkTest "deck";
+  tests = {
+    maximize = mkTest "maximize";
+    focus = mkTest "focus";
+    bar = mkTest "bar";
+    title-bar = mkTest "title-bar";
+    # The test of the theme also looks at the desktop color.
+    theme = mkTestWith kwmWithBackground "theme";
+    deck = mkTest "deck";
+  };
 in
-{
-  inherit maximize focus bar title-bar theme deck;
+tests
+// {
 
   checks = {
     maximize = mkCheck "maximize" "The maximized state of the windows of kwm";
     focus = mkCheck "focus" "The keyboard focus of the windows of kwm";
     bar = mkCheck "bar" "A change of the status of the bar needs no manage sequence";
     title-bar = mkCheck "title-bar" "The title bar of a window with server side decorations";
-    theme = mkCheck "theme" "kwm follows the GTK theme of the settings portal";
-    deck = mkCheck "deck" "The stack of the deck layout is a stack of cards";
+    theme = mkCheck "theme" "kwm follows the GTK theme of the settings portal, also for the desktop color";
+    deck = mkCheck "deck" "The stack of the deck layout is an accordion";
   };
 }

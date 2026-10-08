@@ -38,6 +38,13 @@ pub const Config = struct {
     },
 
     background: ?u32,
+    /// Read the color of the desktop from xfwm4/themerc of the current GTK
+    /// theme: the key of the color in that file. The color replaces
+    /// `background`, and follows each change of the theme. Without the key
+    /// in the file, kwm uses `background`. With `background` null, kwm does
+    /// not fill the desktop. null: use only `background`. Refer to
+    /// desktop.zig and theme.zig.
+    background_gtk_color: ?[]const u8 = null,
 
     bar: @import("config/bar.zig"),
 

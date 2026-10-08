@@ -24,6 +24,11 @@
     // solid color background
     // note: set this to null if you use other wallpaper program like `swaybg`, orelse it will be covered by this and unable to see
     .background = 0x33000000,
+    // ?[]const u8
+    // the key of the desktop color in xfwm4/themerc of the current GTK theme, for example
+    // "desktop_color" of win-classic-theme. the color replaces `background` and follows each
+    // change of the theme. null to use only `background`
+    .background_gtk_color = null,
 
     .bar = .{
         .show_default = true,
@@ -57,6 +62,8 @@
             .tags = .{ "1", "2", "3", "4", "5", "6", "7", "8", "9" },
             // text color of tags without windows, null to use the scheme color
             .empty_fg = 0x1d2023ff,
+            // fill the selected tags with the desktop color (`background`), not with `select.bg`
+            .select_bg_desktop = false,
 
             // click callback
             // each part supports left/right/middle/side/extra/forward/back/task

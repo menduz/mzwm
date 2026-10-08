@@ -72,7 +72,7 @@ pub fn render(self: *Self) void {
     self.shell_surface.set_position(self.output.x, self.output.y);
 
     const buffer = (
-        if (ctx.cfg.background) |color| blk: {
+        if (ctx.desktop_color()) |color| blk: {
             const rgba = utils.rgba(color);
             break :blk ctx.wp_single_pixel_buffer_manager.createU32RgbaBuffer(
                 rgba.r,

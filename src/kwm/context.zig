@@ -295,6 +295,26 @@ pub inline fn get() *Self {
 }
 
 
+/// The color of the desktop changed: the configuration or the GTK theme.
+/// Fill the backgrounds again, and draw the tags of the bars again (refer to
+/// `select_bg_desktop`).
+pub fn desktop_color_changed(self: *Self) void {
+    var it = self.outputs.safeIterator(.forward);
+    while (it.next()) |output| {
+        if (comptime build_options.background_enabled) output.background.damage();
+        if (comptime build_options.bar_enabled) output.bar.damage(.tags);
+    }
+}
+
+
+/// The color of the desktop, as 0xRRGGBBAA. null: kwm does not fill the
+/// desktop. Refer to desktop.zig.
+pub fn desktop_color(self: *Self) ?u32 {
+    const theme = @import("theme.zig");
+    return @import("desktop.zig").color(self.cfg.background, theme.desktop_color());
+}
+
+
 /// Ask river for a manage sequence. The log names the caller: each manage
 /// sequence arranges all windows, thus a caller that asks often costs.
 pub fn manage_dirty(self: *Self, src: std.builtin.SourceLocation) void {
@@ -381,16 +401,7 @@ pub fn reload_config(self: *Self) void {
         }
     }
 
-    if (comptime build_options.background_enabled) {
-        if (mask.background) {
-            {
-                var it = self.outputs.safeIterator(.forward);
-                while (it.next()) |output| {
-                    output.background.damage();
-                }
-            }
-        }
-    }
+    if (mask.background or mask.background_gtk_color) self.desktop_color_changed();
 
     if (comptime build_options.bar_enabled) {
         if (mask.bar) {

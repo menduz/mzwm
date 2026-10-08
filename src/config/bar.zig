@@ -44,6 +44,10 @@ tags: ?struct {
     tags: []const []const u8,
     /// Text color of the tags without windows. null uses the color of the scheme.
     empty_fg: ?u32 = null,
+    /// The background of the selected tags is the color of the desktop
+    /// (refer to `background` and `background_gtk_color`), not `select.bg`
+    /// of the scheme.
+    select_bg_desktop: bool = false,
     click: meta.enum_struct(
         kwm.Button,
         ?kwm.BindingAction

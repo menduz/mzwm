@@ -67,7 +67,17 @@ pub fn set_gtk_theme(name: []const u8) void {
     gtk_theme = copy;
 
     load(&colors, name);
+    ctx.desktop_color_changed();
     ctx.manage_dirty(@src());
+}
+
+
+/// The color of the desktop in the current GTK theme: the key
+/// `background_gtk_color` of the configuration. null: the theme does not
+/// give it. Refer to desktop.zig.
+pub fn desktop_color() ?u32 {
+    const key = ctx.cfg.background_gtk_color orelse return null;
+    return colors.get(key);
 }
 
 
