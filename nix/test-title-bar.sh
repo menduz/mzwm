@@ -11,6 +11,24 @@
 set -euo pipefail
 
 TEST_NAME=title-bar
+
+# config.def.zon with a kill prompt for the test: it keeps its title and its
+# rows, and answers with the index in $XDG_RUNTIME_DIR/answer.
+TEST_KWM_CONFIG=$(python3 - "$TEST_DEFAULT_CONFIG" <<'PY'
+import json
+import re
+import sys
+text = open(sys.argv[1]).read()
+prompt = ('cat >"$XDG_RUNTIME_DIR/prompt-rows"; '
+          'printf %s "$0" >"$XDG_RUNTIME_DIR/prompt-title"; '
+          'cat "$XDG_RUNTIME_DIR/answer"')
+line = "    .kill_prompt = .{ " + ", ".join(json.dumps(a) for a in ("sh", "-c", prompt, "{title}")) + " },\n"
+new, count = re.subn(r"(?m)^    \.kill_prompt = .*\n", lambda _: line, text)
+assert count == 1
+print(new, end="")
+PY
+)
+
 # shellcheck source=test-lib.sh
 source "$TEST_LIB"
 
@@ -118,6 +136,58 @@ expect_exit b "a click on the close button closes the window"
 expect_state a "^maximized=1 .* height=$(field a height)$" \
   "alone again, the window fills the output, without title bar"
 close a
+
+# A window that does not close, as a program that hangs. A click on the close
+# button asks the client to close. A click 2 seconds after the request runs
+# kill_prompt: "Cancel" keeps the window, "Kill it" kills the client. Refer to
+# src/kwm/force_close.zig.
+open g --decoration
+open h --decoration --hang
+expect_state h " decoration=server .* height=$((tiled_height - title_height))$" \
+  "the window that hangs has a title bar"
+grim "$work/hang.png"
+hang_width=$(field h width)
+read -r hx hy _ <<<"$(caption h "$work/hang.png" 000080 1084d0 "$hang_width")"
+click_close() {
+  input move $((hx + hang_width - 2 - 8)) $((hy + 2 + 7))
+  input press
+  input release
+}
+prompt_title=$XDG_RUNTIME_DIR/prompt-title
+
+echo 1 >"$XDG_RUNTIME_DIR/answer"
+click_close
+sleep 1
+if [ "$(cat "$work/h.state.close" 2>/dev/null)" = close ] && [ ! -e "$prompt_title" ] &&
+  kill -0 "${client[h]}" 2>/dev/null; then
+  echo "ok: the first click asks the window to close, without the kill prompt"
+else
+  echo "FAIL: the first click asks the window to close, without the kill prompt"
+  failed=1
+fi
+
+sleep 1.5
+click_close
+for _ in $(seq 50); do
+  [ -s "$prompt_title" ] && break
+  sleep 0.1
+done
+sleep 1
+if [ "$(cat "$prompt_title" 2>/dev/null)" = "h does not close" ] &&
+  [ "$(cat "$XDG_RUNTIME_DIR/prompt-rows" 2>/dev/null)" = "$(printf 'Kill it\nCancel')" ] &&
+  kill -0 "${client[h]}" 2>/dev/null; then
+  echo "ok: a click 2 seconds later asks to kill the process, and Cancel keeps the window"
+else
+  echo "FAIL: a click 2 seconds later asks to kill the process (title: $(cat "$prompt_title" 2>/dev/null))"
+  failed=1
+fi
+
+sleep 1.5
+rm -f "$prompt_title"
+echo 0 >"$XDG_RUNTIME_DIR/answer"
+click_close
+expect_exit h "after Kill it, the client of the window stops"
+close g
 
 # A client without xdg-decoration draws its own decorations.
 open c

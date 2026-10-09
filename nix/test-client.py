@@ -12,7 +12,7 @@
 # window has a tiled state: kwm gives it to a window that is not floating.
 # decoration is the mode of xdg-decoration (none without --decoration).
 #
-# Usage: test-client.py <name> <state file> [--maximize] [--fixed] [--drag] [--decoration]
+# Usage: test-client.py <name> <state file> [--maximize] [--fixed] [--drag] [--decoration] [--hang]
 #
 #   --maximize  ask to be maximized before the first commit. Chromium does this
 #               when the last active window was maximized.
@@ -23,6 +23,8 @@
 #   --drag      start a drag at a press of the pointer button on the window,
 #               and stop when the drag ends. Brave does this when a tab goes
 #               into another window: the window of the tab closes.
+#   --hang      do not close at the close request, as a program that hangs.
+#               Each request adds a line to <state file>.close.
 #
 # SIGUSR1 asks to be maximized, SIGUSR2 asks to be unmaximized. The client
 # stops at SIGTERM.
@@ -225,7 +227,15 @@ toplevel.dispatcher["wm_capabilities"] = on_wm_capabilities
 # sys.exit in a callback of pywayland does not stop the client. The main loop
 # stops after the dispatch.
 closed = []
-toplevel.dispatcher["close"] = lambda toplevel: closed.append(True)
+def on_close(toplevel):
+    if "--hang" in flags:
+        with open(state_file + ".close", "a") as f:
+            f.write("close\n")
+    else:
+        closed.append(True)
+
+
+toplevel.dispatcher["close"] = on_close
 xdg_surface.dispatcher["configure"] = on_surface_configure
 surface.commit()
 

@@ -5,6 +5,7 @@ const std = @import("std");
 const mem = std.mem;
 const log = std.log.scoped(.window);
 
+const posix = @import("posix");
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
 const river = wayland.client.river;
@@ -26,6 +27,7 @@ const sandbox = @import("sandbox.zig");
 const SandboxLabel = if (build_options.bar_enabled) @import("sandbox_label.zig") else void;
 const TitleBar = if (build_options.bar_enabled) @import("title_bar.zig") else void;
 const decoration_zig = @import("decoration.zig");
+const force_close = @import("force_close.zig");
 
 pub const Decoration = enum {
     csd,
@@ -119,6 +121,9 @@ content_hidden: bool = false,
 
 tag: u32 = 1,
 pid: i32 = 0,
+/// The time of the first close request of the close button, or of the last
+/// kill prompt, in milliseconds. Refer to force_close.zig.
+close_requested_ms: ?i64 = null,
 app_id: ?[]const u8 = null,
 title: ?[]const u8 = null,
 /// The sandbox of the client, from its cgroup. null: no sandbox. Refer
@@ -446,6 +451,65 @@ pub fn unbound_resize(self: *Self, width: ?i32, height: ?i32) void {
     if (self.swallowing_border) |*border| {
         border.damage();
     }
+}
+
+
+/// A click on the close button of the title bar. Refer to force_close.zig.
+fn close_button(self: *Self) void {
+    const now = std.Io.Timestamp.now(ctx.io, .awake).toMilliseconds();
+    switch (force_close.action(self.close_requested_ms, now)) {
+        .close => {
+            if (self.close_requested_ms == null) self.close_requested_ms = now;
+            self.prepare_close();
+        },
+        .ask => {
+            self.close_requested_ms = now;
+            self.ask_kill() catch |err| {
+                log.err("<{*}> ask to kill pid {} failed: {}", .{ self, self.pid, err });
+                self.prepare_close();
+            };
+        },
+    }
+}
+
+
+/// Run `kill_prompt` for the process of the window.
+fn ask_kill(self: *Self) !void {
+    const linux = std.os.linux;
+
+    var path_buffer: [32]u8 = undefined;
+    const exe_path = try std.fmt.bufPrintZ(&path_buffer, "/proc/{}/exe", .{ self.pid });
+    var exe_buffer: [std.fs.max_path_bytes]u8 = undefined;
+    const rc = linux.readlink(exe_path, &exe_buffer, exe_buffer.len);
+    const exe = if (linux.errno(rc) == .SUCCESS) force_close.exe_name(exe_buffer[0..rc]) else "";
+    if (!force_close.may_kill(self.pid, std.c.getpid(), exe)) {
+        log.info("<{*}> does not close, and kwm does not kill pid {} ({s})", .{ self, self.pid, exe });
+        self.prepare_close();
+        return;
+    }
+
+    const stat_path = try std.fmt.bufPrintZ(&path_buffer, "/proc/{}/stat", .{ self.pid });
+    var stat_buffer: [1024]u8 = undefined;
+    const fd = try posix.openZ(stat_path, .{ .ACCMODE = .RDONLY, .CLOEXEC = true }, 0);
+    defer posix.close(fd);
+    const stat = stat_buffer[0..try posix.read(fd, &stat_buffer)];
+    const start = force_close.start_time(stat) orelse return error.NoStartTime;
+
+    var arena_allocator: std.heap.ArenaAllocator = .init(ctx.gpa);
+    defer arena_allocator.deinit();
+    const arena = arena_allocator.allocator();
+
+    var script_buffer: [512]u8 = undefined;
+    const script = try force_close.script(&script_buffer, self.pid, start);
+    const label = try std.fmt.allocPrint(arena, "{s} does not close", .{ self.title orelse self.app_id orelse "The window" });
+
+    var argv: std.ArrayList([]const u8) = .empty;
+    try argv.appendSlice(arena, &.{ "sh", "-c", script, "sh" });
+    for (ctx.cfg.kill_prompt) |arg| {
+        try argv.append(arena, try mem.replaceOwned(u8, arena, arg, "{title}", label));
+    }
+    log.info("<{*}> does not close, ask to kill pid {} ({s})", .{ self, self.pid, exe });
+    ctx.spawn(argv.items);
 }
 
 
@@ -1336,7 +1400,7 @@ pub fn manage(self: *Self) void {
         if (self.title_bar) |*title_bar| {
             if (title_bar.close_requested) {
                 title_bar.close_requested = false;
-                self.prepare_close();
+                self.close_button();
             }
         }
     }

@@ -288,6 +288,11 @@
     // server side decorations that is not maximized; kwm always tries server side decorations
     .title_bar = true,
 
+    // a click on the close button 2 seconds after the close request asks to kill the process of a
+    // window that does not close; the command gets the rows "Kill it" and "Cancel" on stdin and
+    // writes the index of the row; {title} is "<title> does not close"
+    .kill_prompt = .{ "rofi", "-dmenu", "-i", "-no-custom", "-format", "i", "-p", "{title}" },
+
     // window border
     .border = .{
         .width = 2,

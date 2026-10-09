@@ -79,6 +79,12 @@ pub const Config = struct {
     /// and a close button. kwm always tries server side decorations. Refer to
     /// src/kwm/decoration.zig.
     title_bar: bool = true,
+    /// The command that asks to kill the process of a window that does not
+    /// close: a click on the close button 2 seconds after the close request.
+    /// It gets the rows "Kill it" and "Cancel" on its standard input, and
+    /// writes the index of the row. "{title}" is "<title> does not close".
+    /// Refer to src/kwm/force_close.zig.
+    kill_prompt: []const []const u8 = &.{ "rofi", "-dmenu", "-i", "-no-custom", "-format", "i", "-p", "{title}" },
 
     border: struct {
         width: i32,
