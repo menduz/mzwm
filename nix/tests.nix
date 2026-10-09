@@ -126,6 +126,7 @@ let
     theme = mkTestWith kwmWithBackground "theme";
     deck = mkTest "deck";
     csd-margin = mkTest "csd-margin";
+    tooltip = mkTest "tooltip";
   };
 in
 tests
@@ -139,5 +140,6 @@ tests
     theme = mkCheck "theme" "kwm follows the GTK theme of the settings portal, also for the desktop color";
     deck = mkCheck "deck" "The stack of the deck layout is an accordion";
     csd-margin = mkCheck "csd-margin" "The margin of a window with client side decorations";
+    tooltip = mkCheck "tooltip" "The pointer goes straight down into a tooltip with click commands";
   };
 }

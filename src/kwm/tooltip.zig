@@ -7,10 +7,10 @@
 //! sequence, so `render` makes all changes.
 //!
 //! A script widget can give a click command for each line of its tooltip.
-//! Then the tooltip stays `leave_delay` milliseconds after the pointer leaves
-//! the widget, so the pointer can go to the tooltip. The line with a command
-//! under the pointer has the inverse colors, and a left click runs the
-//! command.
+//! Then the tooltip is below the pointer, and stays `leave_delay`
+//! milliseconds after the pointer leaves the widget, so the pointer can go to
+//! the tooltip. The line with a command under the pointer has the inverse
+//! colors, and a left click runs the command.
 
 const std = @import("std");
 const mem = std.mem;
@@ -33,6 +33,7 @@ const tray = @import("tray.zig");
 const Output = @import("output.zig");
 const Layout = @import("layout.zig");
 const types = @import("types.zig");
+const tooltip_place = @import("tooltip_place.zig");
 
 const ctx = Context.get();
 
@@ -426,29 +427,30 @@ fn draw(s: *Surface, t: *const Target, text: []const u8) !void {
         y += line_height;
     }
 
-    // Below a bar at the top, and above a bar at the bottom. The tooltip is
-    // at the right of the cursor, thus the cursor does not cover it.
+    // Below a bar at the top, and above a bar at the bottom. Refer to
+    // tooltip_place.zig.
     const output = bar.output;
-    const right = output.x + output.width;
     const logical_w = utils.physics2logical(i32, w, bar.scale);
     const logical_h = utils.physics2logical(i32, h, bar.scale);
-    const cursor = cursor_size();
-    var x = t.pointer_x + cursor;
-    var pos_y = switch (ctx.cfg.bar.position) {
-        .top => output.y + bar.height(true),
-        .bottom => output.y + output.height - bar.height(true) - logical_h,
-    };
-    if (x + logical_w > right) {
-        // No space at the right of the cursor. Put the tooltip below the
-        // cursor. Above a bar at the bottom, the cursor does not cover the
-        // tooltip, because the cursor goes down from the pointer.
-        x = @max(@min(t.x, right - logical_w), output.x);
-        if (ctx.cfg.bar.position == .top) pos_y = @max(pos_y, t.pointer_y + cursor);
-    }
+    const position = tooltip_place.place(.{
+        .pointer_x = t.pointer_x,
+        .pointer_y = t.pointer_y,
+        .area_x = t.x,
+        .width = logical_w,
+        .output_x = output.x,
+        .output_width = output.width,
+        .bar_y = switch (ctx.cfg.bar.position) {
+            .top => output.y + bar.height(true),
+            .bottom => output.y + output.height - bar.height(true) - logical_h,
+        },
+        .bar_top = ctx.cfg.bar.position == .top,
+        .cursor = cursor_size(),
+        .clickable = clickable(),
+    });
 
     s.shell_surface.sync_next_commit();
     s.shell_surface.place(.top);
-    s.shell_surface.set_position(x, pos_y);
+    s.shell_surface.set_position(position.x, position.y);
 
     s.wl_surface.attach(buffer.wl_buffer, 0, 0);
     s.wl_surface.damageBuffer(0, 0, w, h);

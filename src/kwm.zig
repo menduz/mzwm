@@ -187,4 +187,5 @@ test {
     _ = @import("kwm/refocus.zig");
     _ = @import("kwm/sandbox.zig");
     _ = @import("kwm/themerc.zig");
+    _ = @import("kwm/tooltip_place.zig");
 }

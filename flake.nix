@@ -79,6 +79,7 @@
           test-theme = b.tests.theme;
           test-deck = b.tests.deck;
           test-csd-margin = b.tests.csd-margin;
+          test-tooltip = b.tests.tooltip;
         }
       );
 
