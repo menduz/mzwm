@@ -16,6 +16,7 @@ const Context = @import("kwm/context.zig");
 const widgets = @import("kwm/widgets.zig");
 const tray = @import("kwm/tray.zig");
 const tray_menu = @import("kwm/tray_menu.zig");
+const poll_timeout = @import("kwm/poll_timeout.zig");
 
 const FDType = enum {
     wayland,
@@ -120,11 +121,11 @@ pub fn run(wl_display: *wl.Display) !void {
 
         _ = wl_display.flush();
 
-        var timeout =
-            if (ctx.timer_tasks.peek()) |*task|
-                task.time.toMilliseconds() - Io.Timestamp.now(ctx.io, .awake).toMilliseconds()
-            else -1;
-        if (tray_timeout) |t| timeout = if (timeout < 0) t else @min(timeout, t);
+        const timeout = poll_timeout.get(
+            if (ctx.timer_tasks.peek()) |*task| task.time.toMilliseconds() else null,
+            Io.Timestamp.now(ctx.io, .awake).toMilliseconds(),
+            tray_timeout,
+        );
         log.debug("poll timeout: {}", .{ timeout });
         _ = try posix.poll(poll_fds.items, @intCast(timeout));
 
@@ -181,6 +182,7 @@ test {
     _ = @import("kwm/floating.zig");
     _ = @import("kwm/hover_focus.zig");
     _ = @import("kwm/maximize.zig");
+    _ = @import("kwm/poll_timeout.zig");
     _ = @import("kwm/portal_setting.zig");
     _ = @import("kwm/refocus.zig");
     _ = @import("kwm/sandbox.zig");
