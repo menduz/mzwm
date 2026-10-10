@@ -19,6 +19,7 @@ const Output = @import("output.zig");
 const Context = @import("context.zig");
 const CustomBorder = @import("custom_border.zig");
 const RaisedBorder = @import("raised_border.zig");
+const child_zig = @import("child.zig");
 const floating_zig = @import("floating.zig");
 const maximize_zig = @import("maximize.zig");
 const MaximizeState = maximize_zig.State;
@@ -1206,7 +1207,25 @@ pub fn handle_events(self: *Self) void {
             .init => {
                 log.debug("<{*}> managing new window", .{ self });
 
-                if (self.parent != null) {
+                if (self.parent) |parent| {
+                    // Context.zig puts a new window on the current output of
+                    // kwm. That output can be different from the output of the
+                    // parent. Example: send_to_output moves the parent, and
+                    // the current output does not change. Thus move a child
+                    // window to the output and the tags of its parent. If not,
+                    // a modal dialog can be on an output that the user does
+                    // not look at, and the parent ignores all input.
+                    // In a debug log, the child has two "set output to" lines.
+                    if (parent.output) |output| {
+                        self.set_output(output, false);
+                        self.set_tag(child_zig.tag(parent.tag, parent.sticky, output.tag));
+                        // Context.focus() of the new window set the former
+                        // output as the current output. focused_window() finds
+                        // windows only on the current output. Thus focus the
+                        // window again. If not, the window gets no keyboard
+                        // focus.
+                        ctx.focus(self, true);
+                    }
                     self.toggle_floating(true);
                 }
 
