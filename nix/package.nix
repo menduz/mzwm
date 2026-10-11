@@ -23,6 +23,7 @@
   systemdLibs,
   libspng,
   resvg,
+  libghostty-vt,
   # The programs of the widget scripts in contrib/.
   systemd,
   dunst,
@@ -85,6 +86,8 @@ stdenv.mkDerivation (finalAttrs: {
     systemdLibs
     libspng
     resvg
+    # The terminal of the overlay.
+    libghostty-vt
     wayland
     # build.zig asks pkg-config for the protocol directory of wayland-scanner.
     wayland-scanner
@@ -102,6 +105,8 @@ stdenv.mkDerivation (finalAttrs: {
     "-Dkwim=true"
     # The tray in the bar (StatusNotifierItem).
     "-Dtray=true"
+    # The overlay of the Super key.
+    "-Doverlay=true"
   ];
 
   # `zig build test`, with the dependencies of the build. Without --system,

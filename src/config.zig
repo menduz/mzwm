@@ -86,6 +86,44 @@ pub const Config = struct {
     /// Refer to src/kwm/force_close.zig.
     kill_prompt: []const []const u8 = &.{ "rofi", "-dmenu", "-i", "-no-custom", "-format", "i", "-p", "{title}" },
 
+    /// A band at the bottom of the focused output, from the left edge to the
+    /// right edge, while the Super key stays down alone for `delay`
+    /// milliseconds. Super up removes it. A key binding or another modifier
+    /// before that stops it until the next press of Super. Only in the
+    /// default mode. Refer to src/kwm/overlay.zig and super_hold.zig.
+    ///
+    /// kwm runs `command` in a pseudo terminal with the width of the output
+    /// and `max_height` of its height, and draws the text of the terminal
+    /// (libghostty-vt reads the escape sequences). The band has the height
+    /// of the rows with text. The default command is the list of the key
+    /// bindings: `kwm bindings`. It needs the build option `-Doverlay`.
+    overlay: struct {
+        enabled: bool = false,
+        /// "{config}" is the configuration file of this kwm.
+        command: []const []const u8 = &.{ "kwm", "-c", "{config}", "bindings" },
+        delay: u32 = 2000,
+        /// A fontconfig pattern of a monospace font with a bold face, for
+        /// example Iosevka. null: the font of the bar. A bold cell uses the
+        /// same font with "weight=bold".
+        font: ?[]const u8 = "monospace:size=10",
+        /// The highest band, as a part of the height of the output.
+        max_height: f32 = 0.5,
+        /// The default text and background colors of the terminal.
+        fg: u32 = 0x000000ff,
+        bg: u32 = 0xffffe1ff,
+        /// The color of palette entries 4 and 12 (blue and bright blue).
+        /// `kwm bindings` writes the chords in bold color 4.
+        accent: u32 = 0x000080ff,
+        /// Read the colors from xfwm4/themerc of the current GTK theme. Each
+        /// field is a key of that file. A color that the file does not give
+        /// comes from the fields above. null: use only the fields above.
+        gtk_colors: ?struct {
+            fg: []const u8 = "tooltip_text_color",
+            bg: []const u8 = "tooltip_color",
+            accent: []const u8 = "active_color_1",
+        } = .{},
+    } = .{},
+
     border: struct {
         width: i32,
         color: struct {

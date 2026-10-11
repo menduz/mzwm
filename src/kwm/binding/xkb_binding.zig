@@ -1,5 +1,6 @@
 const Self = @This();
 
+const build_options = @import("build_options");
 const std = @import("std");
 const log = std.log.scoped(.xkb_binding);
 
@@ -104,6 +105,11 @@ fn rwm_xkb_binding_listener(rwm_xkb_binding: *river.XkbBindingV1, event: river.X
         },
         .exiting => if (event == .pressed) unreachable,
         .disabled => {}
+    }
+
+    // A binding stops the overlay of the Super key. Refer to overlay.zig.
+    if (comptime build_options.overlay_enabled) {
+        if (event == .pressed) @import("../overlay.zig").binding();
     }
 
     switch (xkb_binding.event) {

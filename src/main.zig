@@ -171,7 +171,8 @@ fn registry_listener(registry: *wl.Registry, event: wl.Registry.Event, globals: 
             } else if (mem.orderZ(u8, global.interface, river.WindowManagerV1.interface.name) == .eq) {
                 globals.rwm = registry.bind(global.name, river.WindowManagerV1, 4) catch return;
             } else if (mem.orderZ(u8, global.interface, river.XkbBindingsV1.interface.name) == .eq) {
-                globals.rwm_xkb_bindings = registry.bind(global.name, river.XkbBindingsV1, 2) catch return;
+                // Version 3 has modifiers_update, for the overlay.
+                globals.rwm_xkb_bindings = registry.bind(global.name, river.XkbBindingsV1, @min(global.version, 3)) catch return;
             } else if (mem.orderZ(u8, global.interface, river.LayerShellV1.interface.name) == .eq) {
                 globals.rwm_layer_shell = registry.bind(global.name, river.LayerShellV1, 1) catch return;
             } else if (comptime build_options.kwim_enabled) {

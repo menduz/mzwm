@@ -82,6 +82,9 @@ window_below_pointer: struct {
     new: bool = false,
 } = .{},
 has_pointer_interaction: bool = false,
+/// river sends modifiers_update for Super, for the overlay. Refer to
+/// overlay.zig.
+modifiers_watched: bool = false,
 /// The surface of kwm under the pointer, from wl_pointer, for the widgets.
 pointer_surface: ?*wl.Surface = null,
 pointer_surface_x: i32 = 0,
@@ -242,6 +245,16 @@ pub fn manage(self: *Self) void {
     }
 
     self.handle_actions();
+
+    // modifiers_watch is part of the manage sequence. river 0.5 has it in
+    // version 3 of river_xkb_bindings_v1.
+    if (comptime build_options.overlay_enabled) {
+        const watch = ctx.cfg.overlay.enabled;
+        if (watch != self.modifiers_watched and self.rwm_xkb_binding_seat.getVersion() >= 3) {
+            self.rwm_xkb_binding_seat.modifiersWatch(if (watch) .{ .mod4 = true } else .{});
+            self.modifiers_watched = watch;
+        }
+    }
 
     if (self.chorded.state != .enabled) {
         if (self.chorded.state == .exiting) {
@@ -962,6 +975,7 @@ fn shell_surface_interaction(self: *Self, shell_surface: *ShellSurface) void {
             ctx.dismiss_tray_menu();
         } else unreachable,
         .tooltip => if (comptime build_options.bar_enabled) tooltip.click(self.button),
+        .overlay => {},
     }
 
     self.has_pointer_interaction = true;
@@ -1144,7 +1158,14 @@ fn rwm_xkb_binding_seat_listener(rwm_xkb_binding_seat: *river.XkbBindingsSeatV1,
                 .once_pressed, .once_unbound_pressed => seat.chorded.state = .exiting,
                 .once_bound_pressed => {}
             }
-        }
+        },
+        .modifiers_update => |data| {
+            log.debug("<{*}> modifiers_update: {} -> {}", .{ seat, @as(u32, @bitCast(data.old)), @as(u32, @bitCast(data.new)) });
+
+            if (comptime build_options.overlay_enabled) {
+                @import("overlay.zig").modifiers(@bitCast(data.old), @bitCast(data.new));
+            }
+        },
     }
 }
 

@@ -211,6 +211,10 @@ pub fn deinit() void {
 
     @import("theme.zig").deinit();
 
+    if (comptime build_options.overlay_enabled) {
+        @import("overlay.zig").deinit();
+    }
+
     if (comptime build_options.bar_enabled) {
         @import("tooltip.zig").deinit();
         @import("widgets.zig").deinit();
@@ -1337,6 +1341,10 @@ fn rwm_listener(rwm: *river.WindowManagerV1, event: river.WindowManagerV1.Event,
                 }
 
                 @import("tooltip.zig").render();
+            }
+
+            if (comptime build_options.overlay_enabled) {
+                @import("overlay.zig").render();
             }
 
             rwm.renderFinish();

@@ -81,6 +81,13 @@ pub fn desktop_color() ?u32 {
 }
 
 
+/// The color of the key `key` in xfwm4/themerc of the current GTK theme.
+/// null: the theme does not give it.
+pub fn color(key: []const u8) ?u32 {
+    return colors.get(key);
+}
+
+
 /// The colors of a raised border for the current GTK theme.
 pub fn bevel(focused: bool) config.Bevel {
     return bevel_of(null, focused);

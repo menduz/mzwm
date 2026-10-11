@@ -6,9 +6,11 @@
 #
 # The helper reads one command per line from the fifo:
 #
-#     move X Y   move the pointer to X,Y of the output
-#     press      press the left button
-#     release    release the left button
+#     move X Y          move the pointer to X,Y of the output
+#     press             press the left button
+#     release           release the left button
+#     key CODE down|up  press or release the key with the evdev code CODE
+#                       (125: the left Super key)
 #
 # After each command and a roundtrip, it writes the number of done commands to
 # the done file. The protocol modules come from tests.nix (kwm_test_protocols).
@@ -89,6 +91,9 @@ with open(fifo) as commands:
             pointer.motion_absolute(now(), int(words[1]), int(words[2]), width, height)
         elif words[0] in ("press", "release"):
             pointer.button(now(), BTN_LEFT, 1 if words[0] == "press" else 0)
+        elif words[0] == "key":
+            # wlroots updates the modifiers from the keys of the keymap.
+            keyboard.key(now(), int(words[1]), 1 if words[2] == "down" else 0)
         else:
             sys.exit(f"test-input.py: unknown command: {line.strip()}")
         pointer.frame()

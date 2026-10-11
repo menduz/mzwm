@@ -293,6 +293,31 @@
     // writes the index of the row; {title} is "<title> does not close"
     .kill_prompt = .{ "rofi", "-dmenu", "-i", "-no-custom", "-format", "i", "-p", "{title}" },
 
+    // a band at the bottom of the focused output while the Super key stays down alone for `delay`
+    // milliseconds; Super up removes it; a binding or another modifier stops it until the next press
+    // kwm runs `command` in a pseudo terminal (libghostty-vt) and draws its text; the default
+    // command prints the key bindings and their `description` in columns; {config} is this file
+    // needs the build option -Doverlay
+    .overlay = .{
+        .enabled = false,
+        .command = .{ "kwm", "-c", "{config}", "bindings" },
+        .delay = 2000,
+        // a monospace font with a bold face (the chords are bold), null is the font of the bar
+        .font = "monospace:size=10",
+        // the highest band, as a part of the output height
+        .max_height = 0.5,
+        // the text and background colors, and the color of palette entries 4 and 12 (the chords)
+        .fg = 0x000000ff,
+        .bg = 0xffffe1ff,
+        .accent = 0x000080ff,
+        // read the colors from xfwm4/themerc of the GTK theme, null uses only the colors above
+        .gtk_colors = .{
+            .fg = "tooltip_text_color",
+            .bg = "tooltip_color",
+            .accent = "active_color_1",
+        },
+    },
+
     // window border
     .border = .{
         .width = 2,

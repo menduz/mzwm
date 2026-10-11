@@ -17,6 +17,7 @@
   wtype,
   wlrctl,
   grim,
+  procps,
   wayland-scanner,
   pkg-config,
   wlr-protocols,
@@ -79,6 +80,7 @@ let
         wtype
         wlrctl
         grim
+        procps
       ];
       text = ''
         # The fonts of the bar in config.def.zon.
@@ -127,6 +129,7 @@ let
     deck = mkTest "deck";
     csd-margin = mkTest "csd-margin";
     tooltip = mkTest "tooltip";
+    overlay = mkTest "overlay";
   };
 in
 tests
@@ -141,5 +144,6 @@ tests
     deck = mkCheck "deck" "The stack of the deck layout is an accordion";
     csd-margin = mkCheck "csd-margin" "The margin of a window with client side decorations";
     tooltip = mkCheck "tooltip" "The pointer goes straight down into a tooltip with click commands";
+    overlay = mkCheck "overlay" "Super down alone shows the band of the key bindings";
   };
 }

@@ -26,6 +26,7 @@ const FDType = enum {
     widget_script,
     tray,
     tray_menu,
+    overlay,
 };
 
 pub const Layout = @import("kwm/layout.zig");
@@ -120,6 +121,13 @@ pub fn run(wl_display: *wl.Display) !void {
             }
         }
 
+        if (comptime build_options.overlay_enabled) {
+            if (@import("kwm/overlay.zig").poll_fd()) |fd| {
+                try poll_fds.appendBounded(fd);
+                try fd_types.appendBounded(.overlay);
+            }
+        }
+
         _ = wl_display.flush();
 
         const timeout = poll_timeout.get(
@@ -134,7 +142,7 @@ pub fn run(wl_display: *wl.Display) !void {
             // A script that stops gives POLL.HUP. Read to the end of the pipe.
             // sd-bus reads and writes the bus, and finds the errors.
             const events: i16 = switch (fd_type) {
-                .widget_script, .tray_menu => posix.POLL.IN | posix.POLL.HUP,
+                .widget_script, .tray_menu, .overlay => posix.POLL.IN | posix.POLL.HUP,
                 .tray => poll_fd.events | posix.POLL.HUP | posix.POLL.ERR,
                 else => posix.POLL.IN,
             };
@@ -153,6 +161,7 @@ pub fn run(wl_display: *wl.Display) !void {
                     .widget_script => if (comptime build_options.bar_enabled) widgets.handle_script_fd(poll_fd.fd),
                     .tray => if (comptime build_options.tray_enabled) tray.dispatch(),
                     .tray_menu => if (comptime build_options.tray_enabled) tray_menu.handle_fd(),
+                    .overlay => if (comptime build_options.overlay_enabled) @import("kwm/overlay.zig").handle_fd(),
                 }
             }
         }
@@ -178,6 +187,8 @@ test {
     // The tests of the files without Wayland objects.
     _ = @import("kwm/bar_update.zig");
     _ = @import("kwm/bindings_list.zig");
+    _ = @import("kwm/super_hold.zig");
+    if (comptime build_options.overlay_enabled) _ = @import("kwm/vt.zig");
     _ = @import("kwm/child.zig");
     _ = @import("kwm/layout/accordion.zig");
     _ = @import("kwm/decoration.zig");

@@ -63,6 +63,9 @@ pub fn build(b: *std.Build) void {
     // The tray is in the bar, and it links libsystemd for sd-bus.
     const tray_enabled = bar_enabled and (b.option(bool, "tray", "if enable the system tray (needs libsystemd, libspng and resvg)") orelse false);
     const kwim_enabled = b.option(bool, "kwim", "if to call `kwim` automatically") orelse true;
+    // The overlay draws with the fonts of the bar, and reads the escape
+    // sequences of its command with libghostty-vt.
+    const overlay_enabled = bar_enabled and (b.option(bool, "overlay", "if enable the overlay of the Super key (needs libghostty-vt)") orelse false);
 
     const scanner = wayland.Scanner.create(b, .{});
 
@@ -91,7 +94,7 @@ pub fn build(b: *std.Build) void {
     scanner.generate("wp_fractional_scale_manager_v1", 1);
     scanner.generate("wp_single_pixel_buffer_manager_v1", 1);
     scanner.generate("river_window_manager_v1", 4);
-    scanner.generate("river_xkb_bindings_v1", 2);
+    scanner.generate("river_xkb_bindings_v1", 3);
     scanner.generate("river_layer_shell_v1", 1);
     if (kwim_enabled) {
         scanner.generate("river_input_manager_v1", 1);
@@ -205,6 +208,11 @@ pub fn build(b: *std.Build) void {
         kwm_mod.addImport("pixman", pixman_mod);
         kwm_mod.addImport("fcft", fcft_mod);
     }
+    // In the module, thus the tests of vt.zig also link it.
+    if (overlay_enabled) {
+        kwm_mod.link_libc = true;
+        kwm_mod.linkSystemLibrary("libghostty-vt", .{});
+    }
 
     // Here we define an executable. An executable needs to have a root module
     // which needs to expose a `main` function. While we could add a main function
@@ -269,6 +277,7 @@ pub fn build(b: *std.Build) void {
     kwm_options.addOption(bool, "bar_enabled", bar_enabled);
     kwm_options.addOption(bool, "tray_enabled", tray_enabled);
     kwm_options.addOption(bool, "kwim_enabled", kwim_enabled);
+    kwm_options.addOption(bool, "overlay_enabled", overlay_enabled);
     kwm_mod.addOptions("build_options", kwm_options);
 
     const root_options = b.addOptions();

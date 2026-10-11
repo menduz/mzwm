@@ -1,5 +1,6 @@
 const Self = @This();
 
+const build_options = @import("build_options");
 const std = @import("std");
 const log = std.log.scoped(.pointer_binding);
 
@@ -77,6 +78,11 @@ fn rwm_pointer_binding_listener(rwm_pointer_binding: *river.PointerBindingV1, ev
     std.debug.assert(rwm_pointer_binding == pointer_binding.rwm_pointer_binding);
 
     log.debug("<{*}> {s}", .{ pointer_binding, @tagName(event) });
+
+    // A binding stops the overlay of the Super key. Refer to overlay.zig.
+    if (comptime build_options.overlay_enabled) {
+        if (event == .pressed) @import("../overlay.zig").binding();
+    }
 
     pointer_binding.seat.append_action(switch (event) {
         .pressed => pointer_binding.event.pressed orelse return,
