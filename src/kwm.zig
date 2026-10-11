@@ -37,6 +37,7 @@ pub const PointerBindingEvent = binding.PointerBinding.Event;
 pub const WindowDecoration = Window.Decoration;
 pub const RiverInputs = types.RiverInputs;
 pub const Button = types.Button;
+pub const bindings_list = @import("kwm/bindings_list.zig");
 
 
 const ctx = Context.get();
@@ -176,6 +177,7 @@ fn read(comptime T: type, fd: posix.fd_t) !?T {
 test {
     // The tests of the files without Wayland objects.
     _ = @import("kwm/bar_update.zig");
+    _ = @import("kwm/bindings_list.zig");
     _ = @import("kwm/child.zig");
     _ = @import("kwm/layout/accordion.zig");
     _ = @import("kwm/decoration.zig");

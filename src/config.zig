@@ -165,6 +165,9 @@ pub const Config = struct {
             layout: ?u32 = null,
             keysym: []const u8,
             modifiers: Modifiers,
+            /// The text of the binding in the list of `kwm bindings`, for
+            /// example "Open the browser". null: a text from the action.
+            description: ?[]const u8 = null,
             event: kwm.XkbBindingEvent,
         },
         pointer: []const struct {

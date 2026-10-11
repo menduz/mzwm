@@ -18,11 +18,14 @@ const Config = @import("config");
 
 var runtime_log_level: std.log.Level = if (builtins.mode == .Debug) .debug else .info;
 const usage =
-    \\usage: kwm [options]
+    \\usage: kwm [options] [bindings]
     \\  -h,-help               Print this help message and exit.
     \\  -v,-version            Print the version number and exit.
     \\  -c,-config             Specify custom configuration file path.
     \\  -log-level             Specify log level.
+    \\
+    \\  bindings               Print the key bindings of the default mode and
+    \\                         their descriptions in columns, and exit.
     \\
 ;
 
@@ -81,7 +84,8 @@ pub fn main(init: process.Init) !void {
             process.exit(1);
         }
     }
-    if (options.args.len != 0) {
+    const bindings_command = options.args.len == 1 and mem.eql(u8, options.args[0], "bindings");
+    if (options.args.len != 0 and !bindings_command) {
         log.err("unknown option '{s}'", .{options.args[0]});
         try print(init.io, .stderr, usage);
         process.exit(1);
@@ -98,6 +102,8 @@ pub fn main(init: process.Init) !void {
         log.err("format config path failed: {}", .{ err });
         return err;
     };
+
+    if (bindings_command) return print_bindings(init, config_path, options.flags.@"log-level");
 
     const display = try wl.Display.connect(null);
     defer display.disconnect();
@@ -180,6 +186,39 @@ fn registry_listener(registry: *wl.Registry, event: wl.Registry.Event, globals: 
         },
         .global_remove => {},
     }
+}
+
+
+/// `kwm bindings`: the key bindings of the default mode, in columns for the
+/// width of the terminal. The overlay of kwm runs this command in a pseudo
+/// terminal. Refer to src/kwm/bindings_list.zig.
+fn print_bindings(init: process.Init, config_path: []const u8, log_level: ?[]const u8) !void {
+    // The standard error is the pseudo terminal of the overlay. Show only
+    // errors there, if the user does not give a log level.
+    if (log_level == null) runtime_log_level = .err;
+
+    const arena = init.arena.allocator();
+    const cfg = Config.load(.{ .gpa = arena, .io = init.io, .env = init.environ_map }, config_path) catch |err| blk: {
+        if (err != error.FileNotFound) log.err("load `{s}` failed ({}), use the default configuration", .{ config_path, err });
+        break :blk Config.default;
+    };
+    const entries = try kwm.bindings_list.collect(arena, cfg.bindings.key, Config.default_mode, Config.default_mode);
+
+    // The size of the terminal, or COLUMNS, or 80 columns. A pipe gets no
+    // escape sequences and no row limit.
+    var size: std.posix.winsize = undefined;
+    const tty = std.os.linux.errno(std.os.linux.ioctl(1, std.os.linux.T.IOCGWINSZ, @intFromPtr(&size))) == .SUCCESS and size.col > 0;
+    const cols: usize = if (tty) size.col else if (init.environ_map.get("COLUMNS")) |text|
+        fmt.parseInt(usize, text, 10) catch 80
+    else
+        80;
+    const rows: usize = if (tty) size.row else 0;
+
+    var buffer: [4096]u8 = undefined;
+    var writer = Io.File.stdout().writer(init.io, &buffer);
+    try kwm.bindings_list.write(arena, &writer.interface, entries, cols, rows, tty);
+    if (!tty) try writer.interface.writeAll("\n");
+    try writer.interface.flush();
 }
 
 

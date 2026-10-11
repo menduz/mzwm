@@ -428,6 +428,8 @@
         //       modifiers:
         //          a struct with fields: shift, ctrl, mod1, mod3, mod4, mod5, and all of these fields are `false` by default
         //          set modifiers to .{} means key binding without any modifier
+        //       description: the text of the binding in `kwm bindings` and in the overlay, optional
+        //          null (the default) gives a text from the action
         //       event: key binding trigger event
         //          there are two options:
         //              .event = .{
