@@ -153,7 +153,9 @@ fn append_program(gpa: mem.Allocator, text: *std.ArrayList(u8), path: []const u8
 
 /// The sorted entries of the key bindings in `mode`. A binding without a
 /// mode is in `default_mode`. Two bindings with the same chord give one
-/// entry: the first binding. Free the result with `free`.
+/// entry: the first binding. Bindings of digits are in one entry when they
+/// have the same modifiers and the same description (refer to
+/// `group_digits`). Free the result with `free`.
 ///
 /// `keys` is the list `bindings.key` of the configuration. The event of a
 /// binding is `.repeat` with an action, or `.click` with a `pressed` and a
@@ -189,8 +191,71 @@ pub fn collect(gpa: mem.Allocator, keys: anytype, mode: []const u8, default_mode
         try entries.append(gpa, .{ .chord = chord_text, .description = description });
     }
 
+    try group_digits(gpa, &entries);
     sort(entries.items);
     return entries.toOwnedSlice(gpa);
+}
+
+
+/// The digit of a chord that ends with "+<digit>" or that is only a digit,
+/// and the length of the text before the digit.
+fn digit_of(chord_text: []const u8) ?struct { digit: u4, prefix: usize } {
+    const n = chord_text.len;
+    if (n == 0 or !std.ascii.isDigit(chord_text[n - 1])) return null;
+    if (n > 1 and chord_text[n - 2] != '+') return null;
+    return .{ .digit = @intCast(chord_text[n - 1] - '0'), .prefix = n - 1 };
+}
+
+
+/// Put the entries of digits with the same modifiers and the same
+/// description in one entry: "Super+1" to "Super+9" give "Super+1..9".
+/// Digits without a gap give a range, other digits a list: "Super+1,3".
+/// An entry of one digit stays as it is.
+pub fn group_digits(gpa: mem.Allocator, entries: *std.ArrayList(Entry)) !void {
+    var i: usize = 0;
+    while (i < entries.items.len) : (i += 1) {
+        const first = entries.items[i];
+        const d = digit_of(first.chord) orelse continue;
+        const prefix = first.chord[0..d.prefix];
+
+        var digits: u10 = @as(u10, 1) << d.digit;
+        var j = i + 1;
+        while (j < entries.items.len) {
+            const other = entries.items[j];
+            if (digit_of(other.chord)) |o| {
+                if (o.prefix == d.prefix and mem.eql(u8, other.chord[0..o.prefix], prefix) and
+                    mem.eql(u8, other.description, first.description))
+                {
+                    digits |= @as(u10, 1) << o.digit;
+                    gpa.free(other.chord);
+                    gpa.free(other.description);
+                    _ = entries.orderedRemove(j);
+                    continue;
+                }
+            }
+            j += 1;
+        }
+        if (@popCount(digits) < 2) continue;
+
+        var text: std.ArrayList(u8) = .empty;
+        errdefer text.deinit(gpa);
+        try text.appendSlice(gpa, prefix);
+        const low: u4 = @intCast(@ctz(digits));
+        const high: u4 = @intCast(9 - @clz(digits));
+        if (@popCount(digits) == @as(u32, high) - low + 1) {
+            try text.print(gpa, "{d}..{d}", .{ low, high });
+        } else {
+            var comma = false;
+            for (0..10) |digit| {
+                if (digits & (@as(u10, 1) << @intCast(digit)) == 0) continue;
+                if (comma) try text.append(gpa, ',');
+                try text.print(gpa, "{d}", .{digit});
+                comma = true;
+            }
+        }
+        gpa.free(first.chord);
+        entries.items[i].chord = try text.toOwnedSlice(gpa);
+    }
 }
 
 
@@ -467,6 +532,74 @@ test "collect: the bindings of the mode, sorted, with a text for each" {
         try testing.expectEqualStrings(e.chord, a.chord);
         try testing.expectEqualStrings(e.description, a.description);
     }
+}
+
+fn test_entries(gpa: mem.Allocator, items: []const Entry) !std.ArrayList(Entry) {
+    var list: std.ArrayList(Entry) = .empty;
+    for (items) |item| try list.append(gpa, .{
+        .chord = try gpa.dupe(u8, item.chord),
+        .description = try gpa.dupe(u8, item.description),
+    });
+    return list;
+}
+
+fn expect_entries(expected: []const Entry, actual: []const Entry) !void {
+    try testing.expectEqual(expected.len, actual.len);
+    for (expected, actual) |e, a| {
+        try testing.expectEqualStrings(e.chord, a.chord);
+        try testing.expectEqualStrings(e.description, a.description);
+    }
+}
+
+test "group_digits: one entry for the digits with the same modifiers and description" {
+    const gpa = testing.allocator;
+    var list = try test_entries(gpa, &.{
+        .{ .chord = "Super+1", .description = "Switch workspace" },
+        .{ .chord = "Super+Shift+1", .description = "Move the window" },
+        .{ .chord = "Super+0", .description = "Switch workspace" },
+        .{ .chord = "Super+2", .description = "Switch workspace" },
+        .{ .chord = "Super+Q", .description = "Close" },
+        .{ .chord = "Super+Shift+2", .description = "Move the window" },
+        .{ .chord = "Super+3", .description = "Switch workspace" },
+    });
+    defer {
+        for (list.items) |e| {
+            gpa.free(e.chord);
+            gpa.free(e.description);
+        }
+        list.deinit(gpa);
+    }
+    try group_digits(gpa, &list);
+    try expect_entries(&.{
+        .{ .chord = "Super+0..3", .description = "Switch workspace" },
+        .{ .chord = "Super+Shift+1..2", .description = "Move the window" },
+        .{ .chord = "Super+Q", .description = "Close" },
+    }, list.items);
+}
+
+test "group_digits: a gap gives a list; other descriptions and other keys stay" {
+    const gpa = testing.allocator;
+    var list = try test_entries(gpa, &.{
+        .{ .chord = "Super+1", .description = "a" },
+        .{ .chord = "Super+3", .description = "a" },
+        .{ .chord = "Super+2", .description = "b" },
+        .{ .chord = "Super+F1", .description = "a" },
+        .{ .chord = "Alt+4", .description = "a" },
+    });
+    defer {
+        for (list.items) |e| {
+            gpa.free(e.chord);
+            gpa.free(e.description);
+        }
+        list.deinit(gpa);
+    }
+    try group_digits(gpa, &list);
+    try expect_entries(&.{
+        .{ .chord = "Super+1,3", .description = "a" },
+        .{ .chord = "Super+2", .description = "b" },
+        .{ .chord = "Super+F1", .description = "a" },
+        .{ .chord = "Alt+4", .description = "a" },
+    }, list.items);
 }
 
 test "sort: lexicographic order of the chord, without case" {
