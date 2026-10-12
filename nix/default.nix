@@ -1,9 +1,21 @@
 # Builds kwm, a window manager for river 0.4 and later. kwm is DWM-like, with
 # tags and a tile layout. Upstream is https://github.com/kewuaa/kwm.
 #
-# `kwmSource` and `version` are for a flake that has kwm as an input. Without
-# them, the recipe builds the files of this repository. (callPackage gives the
-# packages with the names of the arguments, and nixpkgs has a package "src".)
+# `kwmSource` and `version` are for a flake that has kwm as an input, for
+# example:
+#
+#   pkgs.callPackage "${inputs.kwm}/nix" { kwmSource = inputs.kwm; }
+#
+# The flake of kwm gives the package also in an overlay: nix/overlays.nix.
+#
+# Without them, the recipe builds the files of this repository. (callPackage
+# gives the packages with the names of the arguments, and nixpkgs has a package
+# "src".)
+#
+# Options:
+#   - withBackground: kwm draws a solid background in the color of the
+#     desktop. It covers the layer-shell surfaces on the bottom layer, for
+#     example a wallpaper. Default: false.
 #
 # After a change of the Zig dependencies in build.zig.zon, the hash below
 # changes. Then the build fails and shows the new hash. Put that hash below.
@@ -13,7 +25,6 @@
   stdenv,
   zig_0_16,
   pkg-config,
-  makeWrapper,
   wayland,
   wayland-protocols,
   wayland-scanner,
@@ -24,20 +35,18 @@
   libspng,
   resvg,
   libghostty-vt,
-  # The programs of the widget scripts in contrib/.
-  systemd,
-  dunst,
-  jq,
-  pipewire,
-  inotify-tools,
-  findutils,
-  coreutils,
-  gnused,
-  kwmSource ? builtins.path {
+  kwmSource ? ../.,
+  version ? "0-unstable",
+  withBackground ? false,
+}:
+let
+  zigSystemDeps = callPackage ./zig-system-deps.nix { };
+
+  # The files of the build. The screenshots and the Nix files are not part of
+  # it, so a new screenshot does not build kwm again.
+  source = builtins.path {
     name = "kwm-source";
-    path = ../.;
-    # The files of the build. The screenshots and the Nix files are not part
-    # of it, so a new screenshot does not build kwm again.
+    path = kwmSource;
     filter =
       path: type:
       !(builtins.elem (baseNameOf path) [
@@ -51,16 +60,12 @@
         "flake.nix"
         "flake.lock"
       ]);
-  },
-  version ? "0-unstable",
-}:
-let
-  zigSystemDeps = callPackage ./zig-system-deps.nix { };
+  };
 in
 stdenv.mkDerivation (finalAttrs: {
   pname = "kwm";
   inherit version;
-  src = kwmSource;
+  src = source;
 
   deps = zigSystemDeps {
     inherit (finalAttrs) pname version src;
@@ -75,7 +80,6 @@ stdenv.mkDerivation (finalAttrs: {
     pkg-config
     wayland-scanner
     zig_0_16
-    makeWrapper
   ];
 
   buildInputs = [
@@ -98,9 +102,9 @@ stdenv.mkDerivation (finalAttrs: {
     "--system"
     "${finalAttrs.deps}"
     "-Dversion-string=${finalAttrs.version}"
-    # No solid background. The background of kwm covers the layer-shell
-    # surfaces on the bottom layer, for example a wallpaper.
-    "-Dbackground=false"
+    # A solid background covers the layer-shell surfaces on the bottom layer,
+    # for example a wallpaper.
+    "-Dbackground=${lib.boolToString withBackground}"
     # kwm starts kwim to apply the input rules of the kwm configuration.
     "-Dkwim=true"
     # The tray in the bar (StatusNotifierItem).
@@ -113,36 +117,6 @@ stdenv.mkDerivation (finalAttrs: {
   # zig tries to download them.
   doCheck = true;
   zigCheckFlags = finalAttrs.zigBuildFlags;
-
-  # The widget scripts find their programs. The programs of the system come
-  # first, for example the systemd-inhibit of the running systemd.
-  postFixup = ''
-    wrapProgram $out/bin/kwm-sleep-inhibit \
-      --suffix PATH : ${
-        lib.makeBinPath [
-          systemd
-          jq
-        ]
-      }
-    wrapProgram $out/bin/kwm-notifications \
-      --suffix PATH : ${
-        lib.makeBinPath [
-          dunst
-          jq
-        ]
-      }
-    wrapProgram $out/bin/kwm-privacy \
-      --suffix PATH : ${
-        lib.makeBinPath [
-          pipewire
-          jq
-          inotify-tools
-          findutils
-          coreutils
-          gnused
-        ]
-      }
-  '';
 
   meta = {
     description = "DWM-like dynamic tiling window manager for river";

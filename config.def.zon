@@ -155,17 +155,13 @@
         // modules; the classes "warning" and "critical" give a color, "blink" flashes the widget
         // "tooltip_on_click" (not in waybar) is a list with a shell command for each tooltip line;
         // a click on the line runs it, and the tooltip stays while the pointer goes to it
-        // the kwm-* scripts are in contrib/, and zig build installs them
+        // a script widget: .{ .script = .{ .exec = "my-status", .interval = 5000, .return_type = .json } }
+        // (.interval = 0: the script writes a line for each change)
         .center = .{
             // a click starts btop
             .{ .memory = .{ .format = .braille, .on_click = "ghostty -e btop --preset 2 -u 100" } },
             .{ .clock = .{} },
             .{ .cpu = .{ .format = .braille, .on_click = "ghostty -e btop --preset 2 -u 100" } },
-            // " ☕ " when a lock blocks sleep
-            .{ .script = .{ .exec = "kwm-sleep-inhibit", .interval = 5000, .return_type = .json } },
-            // a microphone and a camera that flash red while a program uses them;
-            // the script writes a line for each change
-            .{ .script = .{ .exec = "kwm-privacy", .interval = 0, .return_type = .json } },
         },
         .right = .{
             // shown on battery and while charging, % below 100%
@@ -173,10 +169,7 @@
             // shown at 80% used, in the critical color below 10 GB free
             .{ .disk = .{ .path = "/", .show = 80, .alert = 10000000000 } },
         },
-        .end = .{
-            // "●" for the notifications of dunst, the tooltip holds the last 10
-            .{ .script = .{ .exec = "kwm-notifications", .interval = 5000, .return_type = .json } },
-        },
+        .end = .{},
         .widget_colors = .{
             .warning = 0xffb354ff,
             .critical = 0xff3333ff,

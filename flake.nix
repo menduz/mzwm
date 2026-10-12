@@ -33,9 +33,8 @@
       build =
         pkgs:
         let
-          kwm = pkgs.callPackage ./nix/package.nix {
-            version = "0-unstable-${self.lastModifiedDate or "dirty"}";
-          };
+          # The package of the overlay.
+          inherit (self.overlays.default pkgs pkgs) kwm;
           river-main = pkgs.callPackage ./nix/river.nix { src = river; };
           themes = win-classic-theme.packages.${pkgs.stdenv.hostPlatform.system};
           shots = pkgs.callPackage ./nix/screenshots.nix {
@@ -62,6 +61,9 @@
         };
     in
     {
+      # The overlay adds kwm to nixpkgs. Refer to nix/overlays.nix.
+      overlays = import ./nix/overlays.nix { inherit self; };
+
       packages = forEachSystem (
         pkgs:
         let
