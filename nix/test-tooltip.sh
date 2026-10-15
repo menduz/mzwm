@@ -10,9 +10,10 @@ set -euo pipefail
 TEST_NAME=tooltip
 
 # config.def.zon with one widget in the center of the bar: a script with a
-# tooltip of two lines. A click on a line makes the file clicked-<line> in
-# XDG_RUNTIME_DIR. The widget is wide, thus x 640 (the center of the output)
-# is on it. The tooltip shows at once.
+# tooltip of three lines. A click on line 1 or 2 makes the file
+# clicked-<line> in XDG_RUNTIME_DIR. Line 3 is wider than an i16 (32767
+# pixels): it made kwm panic in render_text. The widget is wide, thus x 640
+# (the center of the output) is on it. The tooltip shows at once.
 TEST_KWM_CONFIG=$(python3 - "$TEST_DEFAULT_CONFIG" <<'PY'
 import json
 import re
@@ -20,13 +21,17 @@ import sys
 
 line = json.dumps({
     "text": "X" * 40,
-    "tooltip": "line one\nline two",
+    "tooltip": "line one\nline two\nLONG",
     "tooltip_on_click": [
         'touch "$XDG_RUNTIME_DIR/clicked-1"',
         'touch "$XDG_RUNTIME_DIR/clicked-2"',
     ],
 })
-script = f"printf '%s\\n' '{line}'; sleep 1000"
+# The script makes line 3: a long line in the configuration is too long
+# for kwm.
+start, end = line.split("LONG")
+script = (f"w=$(head -c 6000 /dev/zero | tr '\\0' W); "
+          f"printf '%s%s%s\\n' '{start}' \"$w\" '{end}'; sleep 1000")
 config = open(sys.argv[1]).read()
 # A ZON string has the escapes of a JSON string.
 widget = f"            .{{ .script = .{{ .exec = {json.dumps(script)}, .interval = 0, .return_type = .json }} }},\n"
@@ -89,6 +94,13 @@ if [ -e "$XDG_RUNTIME_DIR/clicked-1" ]; then
 else
   echo "FAIL: the pointer goes straight down into the tooltip, and a click runs the command of the line ($(ls "$XDG_RUNTIME_DIR" | grep clicked || echo 'no command ran'))"
   failed=1
+fi
+
+if grep -q "panic" "$work/river.log"; then
+  echo "FAIL: kwm shows a tooltip with a line wider than an i16 ($(grep -m1 panic "$work/river.log"))"
+  failed=1
+else
+  echo "ok: kwm shows a tooltip with a line wider than an i16"
 fi
 
 if [ "$failed" -ne 0 ]; then

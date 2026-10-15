@@ -102,7 +102,8 @@ pub fn render_text(
         offset += @intCast(glyph.advance.x - glyph.x);
         if (offset >= buffer.width) break;
     }
-    return @intCast(offset);
+    // A buffer can be wider than an i16. Do not panic on a long text.
+    return @intCast(std.math.clamp(offset, std.math.minInt(i16), std.math.maxInt(i16)));
 }
 
 

@@ -390,8 +390,18 @@ fn draw(s: *Surface, t: *const Target, text: []const u8) !void {
         width = @max(width, @as(i32, @intCast(render_.utils.text_width(run))));
     }
 
-    const w: i32 = width + 2 * pad;
-    const h: i32 = line_height * @as(i32, @intCast(runs.items.len)) + pad;
+    // Not larger than the output.
+    const size = tooltip_place.size(
+        width,
+        runs.items.len,
+        line_height,
+        pad,
+        utils.logical2physics(i32, bar.output.width, bar.scale),
+        utils.logical2physics(i32, bar.output.height, bar.scale),
+    );
+    const w = size.width;
+    const h = size.height;
+    const shown = runs.items[0..size.lines];
 
     const buffer = s.next_buffer() orelse return error.NoBuffer;
     try buffer.init(w, h);
@@ -410,14 +420,14 @@ fn draw(s: *Surface, t: *const Target, text: []const u8) !void {
     line_box = .{
         .top = top,
         .height = line_height,
-        .count = runs.items.len,
+        .count = shown.len,
         .scale = bar.scale,
     };
 
     // The line under the pointer has the inverse colors, if it has a click
     // command.
     var y: i32 = top;
-    for (runs.items, 0..) |run, i| {
+    for (shown, 0..) |run, i| {
         const selected = hovered == i and line_command(t, i) != null;
         if (selected) {
             rect[0] = .{ .x = 1, .y = @intCast(y), .width = @intCast(w - 2), .height = @intCast(line_height) };

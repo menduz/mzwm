@@ -1,4 +1,5 @@
-//! The position of the tooltip of the bar, without Wayland objects.
+//! The position and the size of the tooltip of the bar, without Wayland
+//! objects.
 //! tooltip.zig gives the values of the tooltip to this function. `zig build
 //! test` runs the tests below. All values are logical pixels in the
 //! coordinates of the outputs.
@@ -54,6 +55,54 @@ pub fn place(t: Tooltip) Position {
     // not cover the tooltip.
     const y = if (t.bar_top and !t.clickable) @max(t.bar_y, t.pointer_y + t.cursor) else t.bar_y;
     return .{ .x = x, .y = y };
+}
+
+
+pub const Size = struct {
+    width: i32,
+    height: i32,
+    /// The number of lines that show. The lines after them do not show.
+    lines: usize,
+};
+
+
+/// The size of the tooltip, in buffer pixels. The tooltip is not larger than
+/// the output (`max_width`, `max_height`), and not larger than a pixman
+/// rectangle (an i16). The end of a long line does not show.
+pub fn size(
+    text_width: i32,
+    lines: usize,
+    line_height: i32,
+    pad: i32,
+    max_width: i32,
+    max_height: i32,
+) Size {
+    const limit = std.math.maxInt(i16);
+    const width = @min(text_width + 2 * pad, max_width, limit);
+    const room = @divFloor(@min(max_height, limit) - pad, @max(1, line_height));
+    const shown = @max(1, @min(lines, @as(usize, @intCast(@max(0, room)))));
+    return .{
+        .width = @max(1, width),
+        .height = line_height * @as(i32, @intCast(shown)) + pad,
+        .lines = shown,
+    };
+}
+
+
+test "size: a small tooltip has the size of its text" {
+    try testing.expectEqual(Size{ .width = 120, .height = 70, .lines = 3 }, size(100, 3, 20, 10, 1920, 1080));
+}
+
+test "size: a long line is not wider than the output" {
+    // A line of 40000 pixels panicked in render_text (an i16).
+    try testing.expectEqual(Size{ .width = 1920, .height = 30, .lines = 1 }, size(40000, 1, 20, 10, 1920, 1080));
+    try testing.expectEqual(std.math.maxInt(i16), size(70000, 1, 20, 10, 100000, 1080).width);
+}
+
+test "size: many lines are not higher than the output" {
+    const s = size(100, 5000, 20, 10, 1920, 1080);
+    try testing.expectEqual(@as(usize, 53), s.lines);
+    try testing.expect(s.height <= 1080);
 }
 
 
