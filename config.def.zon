@@ -162,6 +162,11 @@
             .{ .memory = .{ .format = .braille, .on_click = "ghostty -e btop --preset 2 -u 100" } },
             .{ .clock = .{} },
             .{ .cpu = .{ .format = .braille, .on_click = "ghostty -e btop --preset 2 -u 100" } },
+            // the hottest sensor of /sys/class/hwmon, empty at 40°C and full at 80°C
+            // (.low and .high); the tooltip has all the sensors
+            // .ignore = .{ "legion_hwmon" } ignores hwmon devices by name
+            // .nvidia_smi = true also shows the NVIDIA GPUs (they have no hwmon device)
+            .{ .temperature = .{ .format = .braille } },
         },
         .right = .{
             // shown on battery and while charging, % below 100%

@@ -18,6 +18,29 @@ pub const Meter = clickable(struct {
     critical: u8 = 90,
 });
 
+pub const Temperature = clickable(struct {
+    /// .braille: the hottest sensor as a meter, as the CPU meter.
+    /// .celsius: the temperature of the hottest sensor, for example "54C".
+    /// The tooltip has the temperatures of all the sensors, with the
+    /// warning and critical colors of the meter. kwm ignores
+    /// the values of 0°C or less and above 150°C (errors of the sensor).
+    format: enum { braille, celsius } = .braille,
+    /// The names of hwmon devices (the file "name") to ignore, for example
+    /// .{ "legion_hwmon" } for a sensor that gives wrong values.
+    ignore: []const []const u8 = &.{},
+    /// Also show the NVIDIA GPUs with nvidia-smi. Their driver has no hwmon
+    /// device. kwm does not start nvidia-smi while the GPUs sleep (runtime
+    /// D3), because nvidia-smi wakes them.
+    nvidia_smi: bool = false,
+    /// Degrees Celsius of an empty meter and of a full meter.
+    low: i32 = 40,
+    high: i32 = 80,
+    interval: u32 = 2000,
+    /// Percentages of the meter for the warning and critical colors.
+    warning: u8 = 70,
+    critical: u8 = 90,
+});
+
 pub const Clock = clickable(struct {
     /// strftime(3) formats of the text and of the tooltip.
     format: [:0]const u8 = "%a %d %H:%M",
@@ -64,6 +87,7 @@ pub const Script = clickable(struct {
     /// .text: the line is the text.
     /// .json: the line is an object with "text", "tooltip" and "class", as
     /// waybar reads it. The classes "warning" and "critical" select colors.
+    /// A tooltip line that starts with ^#RRGGBBAA has that color.
     /// "tooltip_on_click" is a list with a shell command for each line of
     /// the tooltip. A click on the line runs the command.
     return_type: enum { text, json } = .text,
@@ -72,6 +96,7 @@ pub const Script = clickable(struct {
 pub const Widget = union(enum) {
     memory: Meter,
     cpu: Meter,
+    temperature: Temperature,
     clock: Clock,
     disk: Disk,
     battery: Battery,

@@ -202,5 +202,7 @@ test {
     _ = @import("kwm/refocus.zig");
     _ = @import("kwm/sandbox.zig");
     _ = @import("kwm/themerc.zig");
+    _ = @import("kwm/tooltip_line.zig");
     _ = @import("kwm/tooltip_place.zig");
+    _ = @import("kwm/widgets/thermal.zig");
 }

@@ -6,6 +6,7 @@
 //   - /proc/meminfo: 40% of 16 GiB is used.
 //   - statvfs("/"): 200 GB of 500 GB are free.
 //   - /sys/class/power_supply: no battery.
+//   - /sys/class/hwmon: no temperature sensors.
 //
 // The other files and paths go to the C library.
 
@@ -52,7 +53,8 @@ static int fixed_file(const char *path) {
             "MemFree:         8388608 kB\n"
             "MemAvailable:   10066330 kB\n");
     }
-    if (strncmp(path, "/sys/class/power_supply", 23) == 0) {
+    if (strncmp(path, "/sys/class/power_supply", 23) == 0
+        || strncmp(path, "/sys/class/hwmon", 16) == 0) {
         errno = ENOENT;
         return -1;
     }

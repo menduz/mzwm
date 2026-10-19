@@ -34,6 +34,7 @@ const Output = @import("output.zig");
 const Layout = @import("layout.zig");
 const types = @import("types.zig");
 const tooltip_place = @import("tooltip_place.zig");
+const tooltip_line = @import("tooltip_line.zig");
 
 const ctx = Context.get();
 
@@ -371,16 +372,20 @@ fn draw(s: *Surface, t: *const Target, text: []const u8) !void {
     const pad: i32 = @divFloor(font.height(), 2);
     const line_height: i32 = font.height();
 
-    // Rasterize each line.
+    // Rasterize each line. Refer to tooltip_line.zig for the colors.
     var runs: std.ArrayList(*const fcft.TextRun) = .empty;
+    var colors: std.ArrayList(?u32) = .empty;
     defer {
         for (runs.items) |run| run.destroy();
         runs.deinit(ctx.gpa);
+        colors.deinit(ctx.gpa);
     }
     var width: i32 = 0;
     var lines = mem.splitScalar(u8, text, '\n');
-    while (lines.next()) |line| {
-        const utf8 = try render_.utils.to_utf8(ctx.gpa, line);
+    while (lines.next()) |raw| {
+        const line = tooltip_line.parse(raw);
+        try colors.append(ctx.gpa, line.color);
+        const utf8 = try render_.utils.to_utf8(ctx.gpa, line.text);
         defer ctx.gpa.free(utf8);
         const run = font.rasterize_text_run(utf8) orelse return error.RasterizeFailed;
         runs.append(ctx.gpa, run) catch |err| {
@@ -433,7 +438,8 @@ fn draw(s: *Surface, t: *const Target, text: []const u8) !void {
             rect[0] = .{ .x = 1, .y = @intCast(y), .width = @intCast(w - 2), .height = @intCast(line_height) };
             _ = pixman.Image.fillRectangles(.src, buffer.image, &fg, 1, &rect);
         }
-        _ = font.render_text(buffer, run, if (selected) &bg else &fg, pad, y);
+        const color = if (colors.items[i]) |c| render_.utils.color(c) else fg;
+        _ = font.render_text(buffer, run, if (selected) &bg else &color, pad, y);
         y += line_height;
     }
 

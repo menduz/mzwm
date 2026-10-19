@@ -22,6 +22,7 @@ const battery = @import("widgets/battery.zig");
 const mem_widget = @import("widgets/mem.zig");
 const net = @import("widgets/net.zig");
 const script = @import("widgets/script.zig");
+const temperature = @import("widgets/temperature.zig");
 
 const Widget = config.widget.Widget;
 
@@ -56,7 +57,10 @@ pub const State = struct {
 
     cpu: cpu.Data = .{},
     net: net.Data = .{},
+    /// The command of a script widget, or nvidia-smi for a temperature
+    /// widget.
     script: script.Data = null,
+    temperature: temperature.Data = .{},
 
     fn deinit(self: *State) void {
         script.stop(&self.script);
@@ -174,6 +178,10 @@ fn update(item: *const Widget, state: *State, now: i64) bool {
     (switch (item.*) {
         .memory => |*cfg| mem_widget.update(cfg, &out),
         .cpu => |*cfg| cpu.update(cfg, &state.cpu, &out),
+        .temperature => |*cfg| temp: {
+            temperature.start_nvidia_smi(cfg, &state.temperature, &state.script);
+            break :temp temperature.update(cfg, &state.temperature, &out);
+        },
         .clock => |*cfg| clock.update(cfg, &out),
         .disk => |*cfg| disk.update(cfg, &out),
         .battery => |*cfg| battery.update(cfg, &out),
@@ -325,6 +333,16 @@ pub fn handle_script_fd(fd: posix.fd_t) void {
 
             var out: common.Output = .{};
             defer out.deinit();
+            if (item.* == .temperature) {
+                // nvidia-smi stopped: show its GPUs at once.
+                if (!temperature.read_nvidia_smi(&state.temperature, &state.script)) return;
+                temperature.update(&item.temperature, &state.temperature, &out) catch |err| {
+                    log.warn("update widget temperature failed: {}", .{ err });
+                    return;
+                };
+                if (set(state, &out)) damage_bars();
+                return;
+            }
             const new_line = script.read(&item.script, &state.script, &out) catch |err| blk: {
                 log.warn("read script failed: {}", .{ err });
                 break :blk false;

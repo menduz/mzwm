@@ -13,7 +13,8 @@ pub const ctx = Context.get();
 pub const Output = struct {
     /// The text on the bar. It can have `^#RRGGBBAA` and `^#!` color codes.
     text: std.ArrayList(u8) = .empty,
-    /// The text of the tooltip. Lines are separated by '\n'.
+    /// The text of the tooltip. Lines are separated by '\n'. A line that
+    /// starts with `^#RRGGBBAA` has that color (refer to tooltip_line.zig).
     tooltip: std.ArrayList(u8) = .empty,
     /// The click commands of the tooltip lines, separated by '\x00'. The
     /// command of line N is item N. An empty item: the line has no command.
@@ -59,15 +60,19 @@ const braille_levels = [_][]const u8 {
 pub fn append_meter(text: *std.ArrayList(u8), meter: anytype, percent: u64) !void {
     const color = level_color(percent, meter.warning, meter.critical);
     switch (meter.format) {
-        .braille => {
-            const index = @min(percent * braille_levels.len / 100, braille_levels.len - 1);
-            try append_colored(text, color, braille_levels[index]);
-        },
+        .braille => try append_braille(text, color, percent),
         .percent => {
             var buffer: [8]u8 = undefined;
             try append_colored(text, color, try fmt.bufPrint(&buffer, "{}%", .{ percent }));
         },
     }
+}
+
+
+/// The two braille cells of a meter.
+pub fn append_braille(text: *std.ArrayList(u8), color: ?u32, percent: u64) !void {
+    const index = @min(percent * braille_levels.len / 100, braille_levels.len - 1);
+    try append_colored(text, color, braille_levels[index]);
 }
 
 
