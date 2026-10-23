@@ -207,5 +207,6 @@ test {
     _ = @import("kwm/themerc.zig");
     _ = @import("kwm/tooltip_line.zig");
     _ = @import("kwm/tooltip_place.zig");
+    _ = @import("kwm/tray_collapse.zig");
     _ = @import("kwm/widgets/thermal.zig");
 }

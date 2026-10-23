@@ -18,6 +18,7 @@ const pixman = @import("pixman");
 
 const sd = @import("sd_bus.zig");
 const icons = @import("icons.zig");
+const tray_collapse = @import("tray_collapse.zig");
 const tray_menu = @import("tray_menu.zig");
 pub const MenuPlace = tray_menu.Place;
 const types = @import("types.zig");
@@ -333,27 +334,88 @@ pub const Shown = struct {
     icon: ?Icon,
 };
 
+/// The bar with the pointer on its tray. With `collapse`, that bar shows
+/// all items. Refer to tray_collapse.zig.
+var hovered_bar: ?*const anyopaque = null;
+
+/// The pointer is on the tray of `bar` now, or on no tray.
+pub fn hover(bar: ?*const anyopaque) void {
+    if (hovered_bar == bar) return;
+    hovered_bar = bar;
+    const cfg = ctx.cfg.bar.tray orelse return;
+    if (cfg.collapse) changed();
+}
+
+
+/// True when the pointer is on the tray of `bar`.
+pub fn hovered(bar: *const anyopaque) bool {
+    return hovered_bar == bar;
+}
+
+
 /// The items that the bar shows: the items that gave their properties,
-/// without the passive items. The icons are for a square of `size`, with
-/// the color `color` (refer to `Item.icon`). The order does not change with
-/// the order of registration: first the items without a symbolic icon, then
-/// the items with a symbolic icon. In each group, the order is by the name
-/// of the executable.
-pub fn visible_items(buffer: []Shown, size: i32, color: u32) []Shown {
+/// without the passive items. With `collapse`, only the items with a
+/// symbolic icon and the items that need attention, unless `expanded`;
+/// without such items, the last item (refer to tray_collapse.zig). The
+/// icons are for a square of `size`, with the color `color` (refer to
+/// `Item.icon`). The order does not change with the order of registration:
+/// with `collapse`, first the items that the collapsed tray hides; then the
+/// items without a symbolic icon, then the items with a symbolic icon. In
+/// each group, the order is by the name of the executable.
+pub fn visible_items(buffer: []Shown, size: i32, color: u32, expanded: bool) []Shown {
     const cfg = ctx.cfg.bar.tray orelse return buffer[0..0];
     var n: usize = 0;
+    var kept: usize = 0;
     for (items.items) |item| {
         if (!item.ready or n == buffer.len) continue;
         if (item.props.status == .passive and !cfg.show_passive) continue;
         buffer[n] = .{ .item = item, .icon = item.icon(size, color) };
+        if (stays(buffer[n])) kept += 1;
         n += 1;
     }
     mem.sort(Shown, buffer[0..n], {}, shown_before);
+    switch (tray_collapse.show(cfg.collapse, expanded, kept)) {
+        .all => {},
+        .kept => {
+            var k: usize = 0;
+            for (buffer[0..n]) |s| {
+                if (!stays(s)) continue;
+                buffer[k] = s;
+                k += 1;
+            }
+            n = k;
+        },
+        .last => if (n > 0) {
+            buffer[0] = buffer[n - 1];
+            n = 1;
+        },
+    }
     return buffer[0..n];
 }
 
 
+/// True when the collapsed tray shows the item.
+fn stays(s: Shown) bool {
+    const symbolic = if (s.icon) |icon| icon.symbolic else false;
+    return tray_collapse.shown(true, false, symbolic, s.item.props.status == .needs_attention);
+}
+
+
+fn collapsing() bool {
+    const cfg = ctx.cfg.bar.tray orelse return false;
+    return cfg.collapse;
+}
+
+
 fn shown_before(_: void, a: Shown, b: Shown) bool {
+    // With collapse, the items that the collapsed tray shows come last: the
+    // collapsed tray is the right end of the tray with all items, thus the
+    // item under the pointer stays under it when the tray shows all items.
+    if (collapsing()) {
+        const a_kept = stays(a);
+        const b_kept = stays(b);
+        if (a_kept != b_kept) return b_kept;
+    }
     const a_symbolic = if (a.icon) |icon| icon.symbolic else false;
     const b_symbolic = if (b.icon) |icon| icon.symbolic else false;
     if (a_symbolic != b_symbolic) return b_symbolic;

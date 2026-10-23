@@ -79,6 +79,7 @@
           test-bar = b.tests.bar;
           test-title-bar = b.tests.title-bar;
           test-drag = b.tests.drag;
+          test-tray = b.tests.tray;
           test-theme = b.tests.theme;
           test-deck = b.tests.deck;
           test-csd-margin = b.tests.csd-margin;

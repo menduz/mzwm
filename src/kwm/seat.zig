@@ -1332,7 +1332,19 @@ fn hover_widget(self: *const Self) void {
         };
         tooltip.pointer(null);
         tooltip.hover(self.widget_under_pointer());
+        if (comptime build_options.tray_enabled) @import("tray.zig").hover(self.bar_with_tray_under_pointer());
     }
+}
+
+
+/// The bar with the pointer on its tray. Refer to tray_collapse.zig.
+fn bar_with_tray_under_pointer(self: *const Self) ?*const anyopaque {
+    const surface = self.pointer_surface orelse return null;
+    var it = ctx.outputs.safeIterator(.forward);
+    while (it.next()) |output| {
+        if (output.bar.over_tray(surface, self.pointer_surface_x)) return &output.bar;
+    }
+    return null;
 }
 
 

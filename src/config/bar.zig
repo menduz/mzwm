@@ -140,6 +140,10 @@ tray: ?struct {
     icon_theme: []const u8 = "hicolor",
     /// Show the items with the status "Passive".
     show_passive: bool = false,
+    /// Show only the items with a symbolic icon and the items with the
+    /// status "NeedsAttention". While the pointer is on the tray, the bar
+    /// shows all items. Refer to src/kwm/tray_collapse.zig.
+    collapse: bool = false,
     /// The color saturation of the icons. 1: the colors of the icon.
     /// 0: grayscale. 0.1: 90% grayscale and 10% color.
     saturation: f32 = 1.0,

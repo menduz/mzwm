@@ -196,6 +196,9 @@
             // then the icons of the programs
             .icon_theme = "Adwaita",
             .show_passive = false,
+            // show only the symbolic icons and the items that need attention,
+            // and all items while the pointer is on the tray
+            .collapse = false,
             // color saturation of the icons: 1 colored, 0 grayscale, 0.1 = 90% gray and 10% color
             .saturation = 1.0,
             // the menus of the items: rows on stdin, the index of the chosen row on stdout

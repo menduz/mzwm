@@ -98,6 +98,7 @@ let
         export TEST_INPUT=${./test-input.py}
         export TEST_PORTAL=${./test-portal.py}
         export TEST_CAPTIONS=${./test-captions.py}
+        export TEST_TRAY=${./test-tray.py}
         export TEST_DEFAULT_CONFIG=${../config.def.zon}
         export PYTHONPATH=${protocols}
         exec bash ${./. + "/test-${name}.sh"} "$@"
@@ -125,6 +126,7 @@ let
     bar = mkTest "bar";
     title-bar = mkTest "title-bar";
     drag = mkTest "drag";
+    tray = mkTest "tray";
     # The test of the theme also looks at the desktop color.
     theme = mkTestWith kwmWithBackground "theme";
     deck = mkTest "deck";
@@ -141,6 +143,7 @@ tests
     focus = mkCheck "focus" "The keyboard focus of the windows of kwm";
     bar = mkCheck "bar" "A change of the status of the bar needs no manage sequence";
     title-bar = mkCheck "title-bar" "The title bar of a window with server side decorations";
+    tray = mkCheck "tray" "The collapsed tray shows the symbolic items, the items that need attention, and all items under the pointer";
     drag = mkCheck "drag" "A drag of a window by its title bar makes it floating, and an edge of the output makes it tiled";
     theme = mkCheck "theme" "kwm follows the GTK theme of the settings portal, also for the desktop color";
     deck = mkCheck "deck" "The stack of the deck layout is an accordion";

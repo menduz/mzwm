@@ -245,6 +245,14 @@ fn tray_rect_at(self: *const Self, x: i32) ?TrayRect {
 }
 
 
+/// True when the pointer at `surface_x` on `surface` is on an item of the
+/// tray of this bar.
+pub fn over_tray(self: *const Self, surface: *wl.Surface, surface_x: i32) bool {
+    if (self.hidden or surface != self.dynamic_component.wl_surface) return false;
+    return self.tray_rect_at(utils.logical2physics(i32, surface_x, self.scale)) != null;
+}
+
+
 /// The widget or the layout area under a pointer at (`surface_x`,
 /// `surface_y`) on `surface`, for the tooltip and for scroll events.
 pub fn widget_at(self: *Self, surface: *wl.Surface, surface_x: i32, surface_y: i32) ?tooltip.Target {
@@ -874,7 +882,7 @@ fn render_dynamic_component(self: *Self) void {
             if (cfg.icon_size > 0) @min(bar_h, utils.logical2physics(i32, @intCast(cfg.icon_size), self.scale))
             else bar_h;
         var item_buffer: [max_tray_items]tray.Shown = undefined;
-        const shown = tray.visible_items(&item_buffer, size, status_scheme.fg);
+        const shown = tray.visible_items(&item_buffer, size, status_scheme.fg, tray.hovered(self));
         if (shown.len == 0) break :draw_tray;
 
         const gap: i32 = utils.logical2physics(i32, @intCast(cfg.spacing), self.scale);
