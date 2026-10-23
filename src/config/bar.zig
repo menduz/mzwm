@@ -8,15 +8,15 @@ const kwm = @import("kwm");
 const meta = @import("meta.zig");
 pub const widget = @import("widget.zig");
 
-const Color = struct {
+pub const Color = struct {
     fg: u32,
     bg: u32,
 };
-const Scheme = struct {
+pub const Scheme = struct {
     normal: Color,
     select: Color,
 };
-const BarArea = union(kwm.BarArea) {
+pub const BarArea = union(kwm.BarArea) {
     tags,
     mode: ?[]const u8,
     layout: ?kwm.Layout.Type,
@@ -39,6 +39,14 @@ font: []const u8,
 min_height: u32 = 0,
 
 scheme: Scheme,
+
+/// Read the colors of the bar from xfwm4/themerc of the current GTK theme.
+/// Each field is a key of that file. The colors replace the colors of
+/// `scheme` and `tags.empty_fg`, and follow each change of the theme.
+/// `override_colors` apply after them. A color that the file does not give
+/// comes from the configuration. null: use only the configuration. Refer to
+/// src/kwm/bar_colors.zig.
+gtk_colors: ?GtkColors = null,
 
 tags: ?struct {
     tags: []const []const u8,
@@ -168,17 +176,38 @@ pub fn get(self: *const Self, comptime area: kwm.BarArea) @FieldType(Self, @tagN
 }
 
 
+pub const GtkColors = struct {
+    fg: []const u8 = "bar_text_color",
+    bg: []const u8 = "bar_color",
+    /// The selected tag and the title of the focused output.
+    select_fg: []const u8 = "bar_selected_text_color",
+    select_bg: []const u8 = "bar_color",
+    /// The tags without windows.
+    empty_fg: []const u8 = "bar_empty_text_color",
+};
+
+
 pub fn get_scheme(
     self: *const Self,
+    area: BarArea,
+) Scheme {
+    return self.override_scheme(self.scheme, area);
+}
+
+
+/// `base` with the colors of `override_colors` for `area`.
+pub fn override_scheme(
+    self: *const Self,
+    base: Scheme,
     area: BarArea,
 ) Scheme {
     for (self.override_colors) |item| {
         if (!item.is_match(area)) continue;
 
-        return meta.override(self.scheme, item.scheme);
+        return meta.override(base, item.scheme);
     }
 
-    return self.scheme;
+    return base;
 }
 
 

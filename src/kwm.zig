@@ -185,6 +185,7 @@ fn read(comptime T: type, fd: posix.fd_t) !?T {
 
 test {
     // The tests of the files without Wayland objects.
+    _ = @import("kwm/bar_colors.zig");
     _ = @import("kwm/bar_update.zig");
     _ = @import("kwm/bindings_list.zig");
     _ = @import("kwm/super_hold.zig");

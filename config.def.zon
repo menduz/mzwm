@@ -55,6 +55,10 @@
                 .bg = 0x0e1419ff,
             },
         },
+        // read the colors from xfwm4/themerc of the GTK theme, null uses only the colors above
+        // and `tags.empty_fg`; .{} gives the keys bar_text_color, bar_color,
+        // bar_selected_text_color (select.fg), bar_color (select.bg) and bar_empty_text_color
+        .gtk_colors = null,
 
         // set null to disable tags part
         .tags = .{

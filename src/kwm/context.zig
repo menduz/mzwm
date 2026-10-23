@@ -311,6 +311,14 @@ pub fn desktop_color_changed(self: *Self) void {
 }
 
 
+/// The GTK theme gave new colors to the bar. Refer to bar_colors.zig.
+pub fn bar_colors_changed(self: *Self) void {
+    if (comptime !build_options.bar_enabled) return;
+    var it = self.outputs.safeIterator(.forward);
+    while (it.next()) |output| output.bar.damage(.all);
+}
+
+
 /// The color of the desktop, as 0xRRGGBBAA. null: kwm does not fill the
 /// desktop. Refer to desktop.zig.
 pub fn desktop_color(self: *Self) ?u32 {

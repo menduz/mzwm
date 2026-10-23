@@ -16,6 +16,7 @@ const fcft = @import("fcft");
 const mvzr = @import("mvzr");
 
 const utils = @import("utils.zig");
+const theme = @import("theme.zig");
 const types = @import("types.zig");
 const render_ = @import("render.zig");
 const sandbox = @import("sandbox.zig");
@@ -393,7 +394,7 @@ fn render_background(self: *Self) void {
 
     const buffer = (
         if (ctx.cfg.bar.empty()) blk: {
-            const rgba = utils.rgba(ctx.cfg.bar.scheme.normal.bg);
+            const rgba = utils.rgba(theme.bar_base_scheme().normal.bg);
             break :blk ctx.wp_single_pixel_buffer_manager.createU32RgbaBuffer(
                 rgba.r,
                 rgba.g,
@@ -549,14 +550,14 @@ fn render_static_component(self: *Self) void {
     const windows_tag: u32 = self.output.occupied_tags();
     const focused_window = ctx.focused_window();
 
-    const scheme = ctx.cfg.bar.get_scheme(.tags);
+    const scheme = theme.bar_scheme(.tags);
     const select_fg = render_.utils.color(scheme.select.fg);
     const select_bg = render_.utils.color(
         desktop.select_bg(scheme.select.bg, ctx.desktop_color(), area.select_bg_desktop),
     );
     const normal_fg = render_.utils.color(scheme.normal.fg);
     const normal_bg = render_.utils.color(scheme.normal.bg);
-    const empty_fg = if (area.empty_fg) |fg| render_.utils.color(fg) else null;
+    const empty_fg = if (theme.bar_empty_fg()) |fg| render_.utils.color(fg) else null;
 
     const bg_rect = [_]pixman.Rectangle16 {
         .{
@@ -669,7 +670,7 @@ fn render_dynamic_component(self: *Self) void {
         const tag = area.tag(ctx.mode) orelse ctx.mode;
         if (tag.len == 0) break :draw_mode;
 
-        const color = ctx.cfg.bar.get_scheme(.{ .mode = ctx.mode }).normal;
+        const color = theme.bar_scheme(.{ .mode = ctx.mode }).normal;
         const fg = render_.utils.color(color.fg);
         const bg = render_.utils.color(color.bg);
 
@@ -729,7 +730,7 @@ fn render_dynamic_component(self: *Self) void {
         };
         if (layout_tag.len == 0) break :draw_layout;
 
-        const color = ctx.cfg.bar.get_scheme(.{ .layout = self.output.current_layout() }).normal;
+        const color = theme.bar_scheme(.{ .layout = self.output.current_layout() }).normal;
         const fg = render_.utils.color(color.fg);
         const bg = render_.utils.color(color.bg);
 
@@ -750,7 +751,7 @@ fn render_dynamic_component(self: *Self) void {
 
     const title_start = x;
     if (ctx.cfg.bar.title) |_| draw_title: {
-        const scheme = ctx.cfg.bar.get_scheme(.title);
+        const scheme = theme.bar_scheme(.title);
         const normal_fg = render_.utils.color(scheme.normal.fg);
         const normal_bg = render_.utils.color(scheme.normal.bg);
         const select_fg = render_.utils.color(scheme.select.fg);
@@ -833,7 +834,7 @@ fn render_dynamic_component(self: *Self) void {
             y,
         ) + @as(i16, @intCast(pad));
     } else {
-        const bg = render_.utils.color(ctx.cfg.bar.scheme.normal.bg);
+        const bg = render_.utils.color(theme.bar_base_scheme().normal.bg);
         _ = pixman.Image.fillRectangles(
             .src,
             buffer.image,
@@ -845,7 +846,7 @@ fn render_dynamic_component(self: *Self) void {
     self.dynamic_splits.appendBounded(@intCast(w)) catch unreachable;
 
     self.widget_rects.clearRetainingCapacity();
-    const status_scheme = ctx.cfg.bar.get_scheme(.status).normal;
+    const status_scheme = theme.bar_scheme(.status).normal;
     const status_fg = render_.utils.color(status_scheme.fg);
     const status_bg = render_.utils.color(status_scheme.bg);
 

@@ -35,6 +35,7 @@ const Layout = @import("layout.zig");
 const types = @import("types.zig");
 const tooltip_place = @import("tooltip_place.zig");
 const tooltip_line = @import("tooltip_line.zig");
+const theme = @import("theme.zig");
 
 const ctx = Context.get();
 
@@ -368,7 +369,7 @@ fn hide() void {
 fn draw(s: *Surface, t: *const Target, text: []const u8) !void {
     const bar = t.bar;
     const font = &bar.font;
-    const scheme = ctx.cfg.bar.scheme.normal;
+    const scheme = theme.bar_base_scheme().normal;
     const pad: i32 = @divFloor(font.height(), 2);
     const line_height: i32 = font.height();
 
@@ -478,7 +479,7 @@ fn draw(s: *Surface, t: *const Target, text: []const u8) !void {
 /// The size of the cursor, in logical pixels. river uses the size of the
 /// xcursor theme, or XCURSOR_SIZE, or 24.
 fn cursor_size() i32 {
-    if (ctx.cfg.xcursor_theme) |theme| return @intCast(theme.size);
+    if (ctx.cfg.xcursor_theme) |cursor_theme| return @intCast(cursor_theme.size);
     if (ctx.env.get("XCURSOR_SIZE")) |size| {
         return std.fmt.parseInt(i32, size, 10) catch 24;
     }

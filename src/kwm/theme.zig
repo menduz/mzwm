@@ -16,6 +16,7 @@ const config = @import("config");
 
 const Context = @import("context.zig");
 const themerc = @import("themerc.zig");
+const bar_colors = @import("bar_colors.zig");
 
 const ctx = Context.get();
 
@@ -68,6 +69,7 @@ pub fn set_gtk_theme(name: []const u8) void {
 
     load(&colors, name);
     ctx.desktop_color_changed();
+    if (ctx.cfg.bar.gtk_colors != null) ctx.bar_colors_changed();
     ctx.manage_dirty(@src());
 }
 
@@ -85,6 +87,27 @@ pub fn desktop_color() ?u32 {
 /// null: the theme does not give it.
 pub fn color(key: []const u8) ?u32 {
     return colors.get(key);
+}
+
+
+/// The colors of the bar in `area`, with the colors of the current GTK theme.
+/// Refer to bar_colors.zig.
+pub fn bar_scheme(area: bar_colors.Bar.BarArea) bar_colors.Bar.Scheme {
+    return bar_colors.scheme(&ctx.cfg.bar, area, color);
+}
+
+
+/// The scheme of the bar without `override_colors`, with the colors of the
+/// current GTK theme.
+pub fn bar_base_scheme() bar_colors.Bar.Scheme {
+    return bar_colors.themed(ctx.cfg.bar.scheme, ctx.cfg.bar.gtk_colors, color);
+}
+
+
+/// The text color of the tags without windows, with the colors of the
+/// current GTK theme. null: the color of the scheme.
+pub fn bar_empty_fg() ?u32 {
+    return bar_colors.empty_fg(&ctx.cfg.bar, color);
 }
 
 
