@@ -95,6 +95,7 @@ pub fn update(cfg: anytype, data: *const Data, out: *common.Output) !void {
         out.hidden = true;
         return;
     };
+    out.hidden = !thermal.shown(hottest.millidegrees, cfg.show);
 
     const percent = thermal.percent(hottest.millidegrees, cfg.low, cfg.high);
     const color = common.level_color(percent, cfg.warning, cfg.critical);

@@ -170,6 +170,7 @@
             // (.low and .high); the tooltip has all the sensors
             // .ignore = .{ "legion_hwmon" } ignores hwmon devices by name
             // .nvidia_smi = true also shows the NVIDIA GPUs (they have no hwmon device)
+            // .show = 60 shows the widget only at 60°C or more
             .{ .temperature = .{ .format = .braille } },
         },
         .right = .{

@@ -32,6 +32,9 @@ pub const Temperature = clickable(struct {
     /// device. kwm does not start nvidia-smi while the GPUs sleep (runtime
     /// D3), because nvidia-smi wakes them.
     nvidia_smi: bool = false,
+    /// Degrees Celsius: the widget shows only when the hottest sensor is at
+    /// this temperature or more. null: always.
+    show: ?i32 = null,
     /// Degrees Celsius of an empty meter and of a full meter.
     low: i32 = 40,
     high: i32 = 80,

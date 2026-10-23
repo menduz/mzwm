@@ -117,6 +117,14 @@ pub fn celsius_text(buffer: []u8, millidegrees: i64) fmt.BufPrintError![]u8 {
 }
 
 
+/// The widget shows the hottest sensor at `show` degrees Celsius or more,
+/// as the text shows it (to the nearest degree). null: always.
+pub fn shown(millidegrees: i64, show: ?i32) bool {
+    const limit = show orelse return true;
+    return degrees(millidegrees) >= limit;
+}
+
+
 /// The meter percentage: 0 at `low` degrees Celsius or less, 100 at `high`
 /// or more.
 pub fn percent(millidegrees: i64, low: i32, high: i32) u64 {
@@ -147,6 +155,15 @@ test "30 degrees is an empty meter and 80 degrees a full one" {
     try testing.expectEqual(90, percent(75_000, 30, 80));
     try testing.expectEqual(100, percent(80_000, 30, 80));
     try testing.expectEqual(100, percent(105_000, 30, 80));
+}
+
+test "the widget shows from the limit, as the text rounds the degrees" {
+    try testing.expect(!shown(59_000, 60));
+    try testing.expect(!shown(59_499, 60));
+    try testing.expect(shown(59_500, 60));
+    try testing.expect(shown(60_000, 60));
+    try testing.expect(shown(95_000, 60));
+    try testing.expect(shown(20_000, null));
 }
 
 test "a range without width is empty below the limit and full at it" {
