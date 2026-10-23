@@ -364,6 +364,11 @@ pub fn manage(self: *Self) void {
         }
     }
 
+    // The pointer holds a floating window at a drop target: the layout shows
+    // the drop. Refer to begin_drop_preview in context.zig.
+    const preview = ctx.begin_drop_preview(self);
+    defer if (preview) |*state| ctx.end_drop_preview(self, state);
+
     switch (self.current_layout()) {
         .float => {},
         inline else => |layout| layout.arrange(self) catch |err| {

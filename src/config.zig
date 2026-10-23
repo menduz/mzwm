@@ -69,6 +69,28 @@ pub const Config = struct {
 
     remember_floating_geometry: bool,
 
+    /// A window that the pointer moves. Refer to src/kwm/drag.zig.
+    drag: struct {
+        /// A tiled window that the pointer moves by its title bar becomes
+        /// floating when the pointer goes farther than this distance from the
+        /// press, in logical pixels. null: the window stays tiled.
+        float_distance: ?i32 = 32,
+        /// A floating window that the pointer releases this distance or less
+        /// from an edge of the output becomes tiled, in logical pixels. The
+        /// edge on the side of the master area gives a master window, and
+        /// the opposite edge a window at the top of the stack. null: the
+        /// window stays floating.
+        tile_edge: ?i32 = 8,
+        /// While the pointer is at such an edge, the other windows show their
+        /// places after the drop, and a rectangle shows the place of the
+        /// window: a fill and an outline, as 0xRRGGBBAA. null: no preview.
+        preview: ?struct {
+            fill: u32 = 0xf2971840,
+            outline: u32 = 0xf29718ff,
+            outline_width: i32 = 2,
+        } = .{},
+    } = .{},
+
     auto_swallow: bool,
 
     default_attach_mode: meta.enum_struct(kwm.Layout.Type, kwm.WindowAttachMode),

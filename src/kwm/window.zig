@@ -183,6 +183,17 @@ operator: union(enum) {
     move: struct {
         start_x: i32,
         start_y: i32,
+        start_width: i32,
+        start_height: i32,
+        /// The pointer at the start, in the coordinates of the compositor.
+        pointer_x: i32,
+        pointer_y: i32,
+        /// The last move of the pointer from the start.
+        dx: i32 = 0,
+        dy: i32 = 0,
+        /// The window is tiled. It becomes floating after a distance. Refer
+        /// to drag.zig.
+        tiled: bool,
         seat: *Seat,
     },
     resize: struct {
@@ -229,6 +240,10 @@ pub fn create(rwm_window: *river.WindowV1, output: ?*Output) !*Self {
 
 pub fn destroy(self: *Self) void {
     defer log.debug("<{*}> destroyed", .{ self });
+
+    if (ctx.drop_preview) |preview| {
+        if (preview.window == self) ctx.clear_drop_preview();
+    }
 
     {
         var it = ctx.seats.safeIterator(.forward);
@@ -625,6 +640,14 @@ fn sync_decoration(self: *Self) void {
 /// True when `surface` is a surface of a decoration that kwm draws for the
 /// window: the title bar, or the border and its strips. A press on it can
 /// move a floating window. Refer to seat.zig.
+pub fn owns_title_bar(self: *const Self, surface: *wl.Surface) bool {
+    if (comptime build_options.bar_enabled) {
+        if (self.title_bar) |*title_bar| return title_bar.wl_surface == surface;
+    }
+    return false;
+}
+
+
 pub fn owns_decoration(self: *const Self, surface: *wl.Surface) bool {
     if (comptime build_options.bar_enabled) {
         if (self.title_bar) |*title_bar| {
@@ -1072,6 +1095,15 @@ pub fn ensure_floating(self: *Self) void {
 }
 
 
+/// The pointer moves a tiled window far enough: the window becomes floating,
+/// with the size that it had in the layout. Refer to drag.zig.
+pub fn float_from_drag(self: *Self, width: i32, height: i32) void {
+    self.toggle_floating(true);
+    self.unbound_resize(width, height);
+    ctx.manage_dirty(@src());
+}
+
+
 pub fn toggle_floating(self: *Self, flag: ?bool) void {
     const floating = flag orelse !self.floating;
     if (self.floating == floating) return;
@@ -1332,6 +1364,11 @@ pub fn handle_events(self: *Self) void {
                             .move = .{
                                 .start_x = self.x,
                                 .start_y = self.y,
+                                .start_width = self.width,
+                                .start_height = self.height,
+                                .pointer_x = data.seat.pointer_position.x,
+                                .pointer_y = data.seat.pointer_position.y,
+                                .tiled = self.managed_by_layout(),
                                 .seat = data.seat,
                             },
                         };
@@ -1761,6 +1798,7 @@ fn rwm_window_listener(rwm_window: *river.WindowV1, event: river.WindowV1.Event,
         .closed => {
             log.debug("<{*}> closed", .{ window });
 
+            ctx.window_closing(window);
             window.destroy();
         },
         .decoration_hint => |data| {
@@ -1858,7 +1896,15 @@ fn rwm_window_listener(rwm_window: *river.WindowV1, event: river.WindowV1.Event,
         .pointer_move_requested => |data| {
             log.debug("<{*}> pointer move requested: {*}", .{ window, data.seat });
 
-            if (window.managed_by_layout()) return;
+            // A client that draws its own title bar asks for the move. A
+            // tiled window becomes floating after a distance (drag.zig).
+            if (!decoration_zig.drag_moves(.{
+                .floating = !window.managed_by_layout(),
+                .maximized = window.maximize,
+                .fullscreen = window.fullscreen != .none,
+                .title = true,
+                .tiled_moves = ctx.cfg.drag.float_distance != null,
+            })) return;
 
             if (data.seat) |rwm_seat| {
                 const seat: *Seat = @ptrCast(

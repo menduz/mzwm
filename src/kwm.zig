@@ -194,10 +194,12 @@ test {
     _ = @import("kwm/layout/accordion.zig");
     _ = @import("kwm/decoration.zig");
     _ = @import("kwm/desktop.zig");
+    _ = @import("kwm/drag.zig");
     _ = @import("kwm/floating.zig");
     _ = @import("kwm/force_close.zig");
     _ = @import("kwm/hover_focus.zig");
     _ = @import("kwm/maximize.zig");
+    _ = @import("kwm/nmaster.zig");
     _ = @import("kwm/poll_timeout.zig");
     _ = @import("kwm/portal_setting.zig");
     _ = @import("kwm/refocus.zig");

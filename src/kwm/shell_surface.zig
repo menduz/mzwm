@@ -18,6 +18,7 @@ const Type = union(enum) {
     bar: if (build_options.bar_enabled) *@import("bar.zig") else void,
     tooltip,
     overlay,
+    drop_preview,
 };
 
 const ctx = Context.get();

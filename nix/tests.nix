@@ -124,6 +124,7 @@ let
     focus = mkTest "focus";
     bar = mkTest "bar";
     title-bar = mkTest "title-bar";
+    drag = mkTest "drag";
     # The test of the theme also looks at the desktop color.
     theme = mkTestWith kwmWithBackground "theme";
     deck = mkTest "deck";
@@ -140,6 +141,7 @@ tests
     focus = mkCheck "focus" "The keyboard focus of the windows of kwm";
     bar = mkCheck "bar" "A change of the status of the bar needs no manage sequence";
     title-bar = mkCheck "title-bar" "The title bar of a window with server side decorations";
+    drag = mkCheck "drag" "A drag of a window by its title bar makes it floating, and an edge of the output makes it tiled";
     theme = mkCheck "theme" "kwm follows the GTK theme of the settings portal, also for the desktop color";
     deck = mkCheck "deck" "The stack of the deck layout is an accordion";
     csd-margin = mkCheck "csd-margin" "The margin of a window with client side decorations";

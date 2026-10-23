@@ -21,6 +21,8 @@ const config = @import("config");
 
 const utils = @import("utils.zig");
 const types = @import("types.zig");
+const drag_zig = @import("drag.zig");
+const nmaster_zig = @import("nmaster.zig");
 const Seat = @import("seat.zig");
 const Output = @import("output.zig");
 const Window = @import("window.zig");
@@ -65,6 +67,12 @@ rwm_inputs: if (build_options.kwim_enabled) types.RiverInputs else void = if (bu
 // seperate layer between floating and nonfloating
 wl_surface: *wl.Surface = undefined,
 layer_marker: ShellSurface = undefined,
+/// The floating window that the pointer moves, at a drop target. Refer to
+/// `update_drop_preview`.
+drop_preview: ?struct { window: *Window, target: DropTarget } = null,
+/// The place of the window of the drop preview, in the coordinates of the
+/// compositor. drop_preview.zig draws it.
+drop_placeholder: ?drag_zig.Area = null,
 
 timer_tasks: std.PriorityQueue(TimerTask, void, TimerTask.compare) = .empty,
 
@@ -232,6 +240,7 @@ pub fn deinit() void {
     ctx.rwm.destroy();
     ctx.rwm_xkb_bindings.destroy();
     ctx.rwm_layer_shell.destroy();
+    @import("drop_preview.zig").deinit();
     ctx.layer_marker.deinit();
     ctx.wl_surface.destroy();
     if (comptime build_options.kwim_enabled) {
@@ -767,6 +776,240 @@ pub fn swap(self: *Self, direction: types.Direction) void {
                 break;
             }
         }
+    }
+}
+
+
+/// The window `window` closes. A master window of a master area with more
+/// than one window takes one master window away. Refer to nmaster.zig.
+pub fn window_closing(self: *Self, window: *Window) void {
+    const output = window.output orelse return;
+    if (window.floating or !window.is_visible_in(output)) return;
+    // The window gives its place back to the terminal that it swallowed.
+    if (window.swallowing != null) return;
+    const nmaster: *i32 = switch (output.current_layout()) {
+        .tile => |tile| &tile.nmaster,
+        .deck => |deck| &deck.nmaster,
+        .centered_master => |centered_master| &centered_master.nmaster,
+        else => return,
+    };
+
+    var index: usize = 0;
+    var tiled: usize = 0;
+    var it = self.windows.safeIterator(.forward);
+    while (it.next()) |w| {
+        if (!w.is_visible_in(output) or w.floating) continue;
+        if (w == window) index = tiled;
+        tiled += 1;
+    }
+
+    const new = nmaster_zig.after_close(nmaster.*, index, tiled);
+    if (new == nmaster.*) return;
+    log.debug("{*} closes: nmaster {} -> {}", .{ window, nmaster.*, new });
+    nmaster.* = new;
+    self.manage_dirty(@src());
+}
+
+
+/// The place of a floating window that the pointer drops: a place in the
+/// layout of an output. Refer to drag.zig.
+pub const DropTarget = struct {
+    output: *Output,
+    place: drag_zig.Place,
+};
+
+
+/// The drop target of the floating window `window` with the pointer at
+/// (`x`, `y`), in the coordinates of the compositor: an edge of its output.
+/// null: the window stays floating.
+pub fn drop_target(self: *Self, window: *Window, x: i32, y: i32) ?DropTarget {
+    if (window.managed_by_layout()) return null;
+    if (window.maximize or window.fullscreen != .none) return null;
+    const output = window.output orelse return null;
+    const layout = output.current_layout();
+    if (layout == .float) return null;
+
+    const side = drag_zig.edge(x, y, .{
+        .x = output.x,
+        .y = output.y,
+        .width = output.width,
+        .height = output.height,
+    }, self.cfg.drag.tile_edge) orelse return null;
+    const master_location: types.LayoutMasterLocation = switch (layout) {
+        .tile => |tile| tile.master_location,
+        .deck => |deck| deck.master_location,
+        else => .left,
+    };
+    const place = drag_zig.place(side, master_location) orelse return null;
+    return .{ .output = output, .place = place };
+}
+
+
+/// The number of master windows of the layout of `output`, for a drop. Only
+/// the layouts with a master side have master windows here.
+fn drop_nmaster(output: *Output) ?*i32 {
+    return switch (output.current_layout()) {
+        .tile => |tile| &tile.nmaster,
+        .deck => |deck| &deck.nmaster,
+        else => null,
+    };
+}
+
+
+/// Put `window` at the place of `target` in the list of windows, and give
+/// the layout its number of master windows after the drop. The window stays
+/// floating. Return the number of master windows before the change.
+fn place_in_layout(self: *Self, window: *Window, target: DropTarget) ?i32 {
+    const output = target.output;
+    const nmaster = drop_nmaster(output);
+    const old = if (nmaster) |n| n.* else null;
+
+    // The other tiled windows of the output.
+    var tiled: usize = 0;
+    {
+        var it = self.windows.safeIterator(.forward);
+        while (it.next()) |w| {
+            if (w != window and w.is_visible_in(output) and !w.floating) tiled += 1;
+        }
+    }
+
+    // The drop starts from the master windows that the layout shows.
+    if (nmaster) |n| n.* = nmaster_zig.for_drop(n.*, tiled);
+
+    window.link.remove();
+    switch (target.place) {
+        .master => {
+            self.windows.prepend(window);
+            if (nmaster) |n| n.* = nmaster_zig.with_new_master(n.*, tiled);
+        },
+        .stack => if (nmaster) |n| {
+            // After the last master window.
+            var link: *wl.list.Link = &self.windows.link;
+            var i: i32 = 0;
+            var it = self.windows.safeIterator(.forward);
+            while (it.next()) |w| {
+                if (i >= n.*) break;
+                if (!w.is_visible_in(output) or w.floating) continue;
+                link = &w.link;
+                i += 1;
+            }
+            link.insert(&window.link);
+        } else self.windows.append(window),
+    }
+    return old;
+}
+
+
+/// The pointer releases a moved window at (`x`, `y`), in the coordinates of
+/// the compositor. A floating window at an edge of its output becomes tiled:
+/// a master window at the edge of the master area, else the first window of
+/// the stack. Refer to drag.zig.
+pub fn drop_window(self: *Self, window: *Window, x: i32, y: i32) void {
+    self.clear_drop_preview();
+    const target = self.drop_target(window, x, y) orelse return;
+    log.debug("drop {*}: {s}", .{ window, @tagName(target.place) });
+
+    _ = self.place_in_layout(window, target);
+    window.toggle_floating(false);
+    self.focus(window, true);
+    self.manage_dirty(@src());
+}
+
+
+/// The pointer moves the floating window `window` to (`x`, `y`). At a drop
+/// target, the layout shows the drop (refer to `begin_drop_preview`).
+pub fn update_drop_preview(self: *Self, window: *Window, x: i32, y: i32) void {
+    if (self.cfg.drag.preview == null) return;
+    const target = self.drop_target(window, x, y);
+    if (self.drop_preview) |current| {
+        if (target) |t| {
+            if (current.window == window and current.target.output == t.output and current.target.place == t.place) return;
+        }
+    } else if (target == null) return;
+
+    self.drop_preview = if (target) |t| .{ .window = window, .target = t } else null;
+    if (self.drop_preview == null) self.drop_placeholder = null;
+    self.manage_dirty(@src());
+}
+
+
+pub fn clear_drop_preview(self: *Self) void {
+    if (self.drop_preview == null) return;
+    self.drop_preview = null;
+    self.drop_placeholder = null;
+    self.manage_dirty(@src());
+}
+
+
+/// The state that `begin_drop_preview` changes, to restore it.
+pub const DropPreviewState = struct {
+    window: *Window,
+    prev: *wl.list.Link,
+    nmaster: ?i32,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    collapsed: bool,
+    collapsed_bottom: bool,
+    scroller_x: @FieldType(Window, "scroller_x"),
+};
+
+
+/// Before the layout of `output` arranges the windows: with a drop preview
+/// on this output, the dragged window is a tiled window at its place after
+/// the drop. Thus the layout gives the other windows their places after the
+/// drop, and the place of the dragged window. `end_drop_preview` restores
+/// the window. null: no preview on this output.
+pub fn begin_drop_preview(self: *Self, output: *Output) ?DropPreviewState {
+    const preview = self.drop_preview orelse return null;
+    if (preview.target.output != output) return null;
+    const window = preview.window;
+    if (!window.floating or !window.is_visible_in(output) or output.current_layout() == .float) return null;
+
+    var state: DropPreviewState = .{
+        .window = window,
+        .prev = window.link.prev.?,
+        .nmaster = null,
+        .x = window.x,
+        .y = window.y,
+        .width = window.width,
+        .height = window.height,
+        .collapsed = window.collapsed,
+        .collapsed_bottom = window.collapsed_bottom,
+        .scroller_x = window.scroller_x,
+    };
+    state.nmaster = self.place_in_layout(window, preview.target);
+    window.floating = false;
+    return state;
+}
+
+
+/// After the layout of `output` arranged the windows: the place of the
+/// dragged window is the placeholder (drop_preview.zig). The window gets
+/// back its floating state, its geometry and its place in the list, and the
+/// layout its number of master windows.
+pub fn end_drop_preview(self: *Self, output: *Output, state: *const DropPreviewState) void {
+    const window = state.window;
+    self.drop_placeholder = drag_zig.placeholder(.{
+        .x = window.x,
+        .y = window.y,
+        .width = window.width,
+        .height = window.height,
+    }, output.exclusive_x(), output.exclusive_y(), self.cfg.border.width);
+
+    window.floating = true;
+    window.x = state.x;
+    window.y = state.y;
+    window.width = state.width;
+    window.height = state.height;
+    window.collapsed = state.collapsed;
+    window.collapsed_bottom = state.collapsed_bottom;
+    window.scroller_x = state.scroller_x;
+    window.link.remove();
+    state.prev.insert(&window.link);
+    if (state.nmaster) |n| {
+        if (drop_nmaster(output)) |nmaster| nmaster.* = n;
     }
 }
 
@@ -1354,6 +1597,8 @@ fn rwm_listener(rwm: *river.WindowManagerV1, event: river.WindowManagerV1.Event,
             if (comptime build_options.overlay_enabled) {
                 @import("overlay.zig").render();
             }
+
+            @import("drop_preview.zig").render();
 
             rwm.renderFinish();
         },

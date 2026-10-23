@@ -69,10 +69,21 @@ pub fn csd_margin(margin: i32, border: i32, raised: bool, outline: bool) i32 {
 
 
 /// A press on the title bar or on the border of a floating window moves the
-/// window, as the pointer_move binding does. The layout places a tiled
-/// window, and a maximized or fullscreen window does not move.
-pub fn drag_moves(window: struct { floating: bool, maximized: bool, fullscreen: bool }) bool {
-    return window.floating and !window.maximized and !window.fullscreen;
+/// window, as the pointer_move binding does. A press on the title bar of a
+/// tiled window also starts a move, when `tiled_moves` is true: the window
+/// becomes floating after a distance (refer to drag.zig). A maximized or
+/// fullscreen window does not move.
+pub fn drag_moves(window: struct {
+    floating: bool,
+    maximized: bool,
+    fullscreen: bool,
+    /// The press is on the title bar, not on the border.
+    title: bool,
+    tiled_moves: bool,
+}) bool {
+    if (window.maximized or window.fullscreen) return false;
+    if (window.floating) return true;
+    return window.title and window.tiled_moves;
 }
 
 
@@ -297,9 +308,16 @@ test "csd_margin: the configuration gives the margin in the other cases" {
     try testing.expectEqual(@as(i32, 0), csd_margin(-1, 3, true, true));
 }
 
-test "drag_moves: only a floating window that is not maximized or fullscreen" {
-    try testing.expect(drag_moves(.{ .floating = true, .maximized = false, .fullscreen = false }));
-    try testing.expect(!drag_moves(.{ .floating = false, .maximized = false, .fullscreen = false }));
-    try testing.expect(!drag_moves(.{ .floating = true, .maximized = true, .fullscreen = false }));
-    try testing.expect(!drag_moves(.{ .floating = true, .maximized = false, .fullscreen = true }));
+test "drag_moves: a floating window by its title bar or its border" {
+    try testing.expect(drag_moves(.{ .floating = true, .maximized = false, .fullscreen = false, .title = true, .tiled_moves = true }));
+    try testing.expect(drag_moves(.{ .floating = true, .maximized = false, .fullscreen = false, .title = false, .tiled_moves = false }));
+    try testing.expect(!drag_moves(.{ .floating = true, .maximized = true, .fullscreen = false, .title = true, .tiled_moves = true }));
+    try testing.expect(!drag_moves(.{ .floating = true, .maximized = false, .fullscreen = true, .title = true, .tiled_moves = true }));
+}
+
+test "drag_moves: a tiled window only by its title bar" {
+    try testing.expect(drag_moves(.{ .floating = false, .maximized = false, .fullscreen = false, .title = true, .tiled_moves = true }));
+    try testing.expect(!drag_moves(.{ .floating = false, .maximized = false, .fullscreen = false, .title = false, .tiled_moves = true }));
+    try testing.expect(!drag_moves(.{ .floating = false, .maximized = false, .fullscreen = false, .title = true, .tiled_moves = false }));
+    try testing.expect(!drag_moves(.{ .floating = false, .maximized = true, .fullscreen = false, .title = true, .tiled_moves = true }));
 }

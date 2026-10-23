@@ -27,6 +27,7 @@ const ShellSurface = @import("shell_surface.zig");
 const floating_zig = @import("floating.zig");
 const refocus_zig = @import("refocus.zig");
 const decoration_zig = @import("decoration.zig");
+const drag_zig = @import("drag.zig");
 const hover_focus = @import("hover_focus.zig");
 const SandboxLabel = if (build_options.bar_enabled) @import("sandbox_label.zig") else void;
 const TitleBar = if (build_options.bar_enabled) @import("title_bar.zig") else void;
@@ -975,7 +976,7 @@ fn shell_surface_interaction(self: *Self, shell_surface: *ShellSurface) void {
             ctx.dismiss_tray_menu();
         } else unreachable,
         .tooltip => if (comptime build_options.bar_enabled) tooltip.click(self.button),
-        .overlay => {},
+        .overlay, .drop_preview => {},
     }
 
     self.has_pointer_interaction = true;
@@ -992,11 +993,25 @@ fn rwm_seat_listener(rwm_seat: *river.SeatV1, event: river.SeatV1.Event, seat: *
             const window = ctx.focused_window().?;
             switch (window.operator) {
                 .none => unreachable,
-                .move => |op_data| {
+                .move => |*op_data| {
                     if (op_data.seat == seat) {
+                        op_data.dx = data.dx;
+                        op_data.dy = data.dy;
+                        // A tiled window stays in its place until the pointer
+                        // goes far enough. Then it floats, with its size.
+                        if (op_data.tiled) {
+                            if (!drag_zig.floats(data.dx, data.dy, ctx.cfg.drag.float_distance)) return;
+                            op_data.tiled = false;
+                            window.float_from_drag(op_data.start_width, op_data.start_height);
+                        }
                         window.move(
                             op_data.start_x+data.dx,
                             op_data.start_y+data.dy,
+                        );
+                        ctx.update_drop_preview(
+                            window,
+                            op_data.pointer_x + data.dx,
+                            op_data.pointer_y + data.dy,
                         );
                     }
                 },
@@ -1046,6 +1061,13 @@ fn rwm_seat_listener(rwm_seat: *river.SeatV1, event: river.SeatV1.Event, seat: *
                     .move => |data| {
                         if (data.seat == seat) {
                             window.prepare_move(.stop);
+                            // A floating window at an edge of the output
+                            // becomes tiled.
+                            if (!data.tiled) ctx.drop_window(
+                                window,
+                                data.pointer_x + data.dx,
+                                data.pointer_y + data.dy,
+                            );
                         }
                     },
                     .resize => |data| {
@@ -1221,9 +1243,9 @@ fn wl_pointer_listener(wl_pointer: *wl.Pointer, event: wl.Pointer.Event, seat: *
                 if (TitleBar.pointer_button(surface, seat.pointer_surface_x, seat.pointer_surface_y, pressed)) return;
             }
 
-            // The title bar or the border of a floating window: a press moves
-            // the window in the next manage sequence. A release before it
-            // ends the move.
+            // The title bar or the border of a floating window, or the title
+            // bar of a tiled window: a press moves the window in the next
+            // manage sequence. A release before it ends the move.
             if (!pressed) {
                 seat.decoration_move = null;
                 return;
@@ -1235,6 +1257,8 @@ fn wl_pointer_listener(wl_pointer: *wl.Pointer, event: wl.Pointer.Event, seat: *
                     .floating = !window.managed_by_layout(),
                     .maximized = window.maximize,
                     .fullscreen = window.fullscreen != .none,
+                    .title = window.owns_title_bar(surface),
+                    .tiled_moves = ctx.cfg.drag.float_distance != null,
                 })) {
                     seat.decoration_move = window;
                     ctx.manage_dirty(@src());
