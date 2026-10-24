@@ -161,11 +161,13 @@
         // a click on the line runs it, and the tooltip stays while the pointer goes to it
         // a script widget: .{ .script = .{ .exec = "my-status", .interval = 5000, .return_type = .json } }
         // (.interval = 0: the script writes a line for each change)
+        // a meter as text: .{ .memory = .{ .format = .braille } }, .{ .cpu = .{ .format = .percent } }
         .center = .{
-            // a click starts btop
-            .{ .memory = .{ .format = .braille, .on_click = "ghostty -e btop --preset 2 -u 100" } },
+            // a gauge: vertical bars for the memory and the CPU use, as high as a tray icon,
+            // the warning and critical colors at .warning and .critical percent;
+            // the tooltip has both values, and a click starts btop
+            .{ .gauge = .{ .bars = .{ .memory, .cpu }, .warning = 70, .critical = 90, .on_click = "ghostty -e btop --preset 2 -u 100" } },
             .{ .clock = .{} },
-            .{ .cpu = .{ .format = .braille, .on_click = "ghostty -e btop --preset 2 -u 100" } },
             // the hottest sensor of /sys/class/hwmon, empty at 40°C and full at 80°C
             // (.low and .high); the tooltip has all the sensors
             // .ignore = .{ "legion_hwmon" } ignores hwmon devices by name

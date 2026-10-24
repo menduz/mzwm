@@ -18,6 +18,19 @@ pub const Meter = clickable(struct {
     critical: u8 = 90,
 });
 
+/// Vertical bars side by side, one for each value, as high as a tray icon,
+/// with a border in the inactive color of the symbolic icons. The tooltip
+/// has a line for each bar. Refer to src/kwm/gauge.zig.
+pub const Gauge = clickable(struct {
+    /// The values of the bars, from left to right. At most 4.
+    bars: []const enum { memory, cpu } = &.{ .memory, .cpu },
+    /// Milliseconds between two updates.
+    interval: u32 = 1000,
+    /// Percentages for the warning and critical colors.
+    warning: u8 = 70,
+    critical: u8 = 90,
+});
+
 pub const Temperature = clickable(struct {
     /// .braille: the hottest sensor as a meter, as the CPU meter.
     /// .celsius: the temperature of the hottest sensor, for example "54C".
@@ -99,6 +112,7 @@ pub const Script = clickable(struct {
 pub const Widget = union(enum) {
     memory: Meter,
     cpu: Meter,
+    gauge: Gauge,
     temperature: Temperature,
     clock: Clock,
     disk: Disk,

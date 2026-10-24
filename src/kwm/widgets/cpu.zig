@@ -17,7 +17,8 @@ pub const Data = struct {
 };
 
 
-pub fn update(cfg: anytype, data: *Data, out: *common.Output) !void {
+/// The CPU use since the last call, in percent.
+pub fn read(data: *Data) !u64 {
     var buffer: [512]u8 = undefined;
     const stat = try common.read_file("/proc/stat", &buffer);
 
@@ -38,7 +39,12 @@ pub fn update(cfg: anytype, data: *Data, out: *common.Output) !void {
     const delta_idle = idle -| data.idle;
     data.* = .{ .total = total, .idle = idle };
 
-    const percent = if (delta_total == 0) 0 else (delta_total -| delta_idle) * 100 / delta_total;
+    return if (delta_total == 0) 0 else (delta_total -| delta_idle) * 100 / delta_total;
+}
+
+
+pub fn update(cfg: anytype, data: *Data, out: *common.Output) !void {
+    const percent = try read(data);
     try common.append_meter(&out.text, cfg, percent);
     try out.tooltip.print(ctx.gpa, "CPU {}%", .{ percent });
 }

@@ -6,6 +6,7 @@ const fmt = std.fmt;
 const posix = @import("posix");
 
 const Context = @import("../context.zig");
+const gauge = @import("../gauge.zig");
 
 pub const ctx = Context.get();
 
@@ -23,6 +24,8 @@ pub const Output = struct {
     /// The widget flashes: its text changes between its colors and the
     /// color of the bar text.
     blink: bool = false,
+    /// The bars of a gauge widget. Refer to gauge.zig.
+    gauge: gauge.Levels = .{},
 
     pub fn deinit(self: *Output) void {
         self.text.deinit(ctx.gpa);

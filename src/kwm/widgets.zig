@@ -23,6 +23,8 @@ const mem_widget = @import("widgets/mem.zig");
 const net = @import("widgets/net.zig");
 const script = @import("widgets/script.zig");
 const temperature = @import("widgets/temperature.zig");
+const gauge_widget = @import("widgets/gauge.zig");
+const gauge = @import("gauge.zig");
 
 const Widget = config.widget.Widget;
 
@@ -49,6 +51,8 @@ pub const State = struct {
     hidden: bool = false,
     /// The widget flashes. Refer to `text`.
     blink: bool = false,
+    /// The bars of a gauge widget. Refer to gauge.zig.
+    gauge: gauge.Levels = .{},
     /// `text` without the color codes, for the flashing.
     plain: std.ArrayList(u8) = .empty,
     /// Awake-clock milliseconds of the next update.
@@ -178,6 +182,7 @@ fn update(item: *const Widget, state: *State, now: i64) bool {
     (switch (item.*) {
         .memory => |*cfg| mem_widget.update(cfg, &out),
         .cpu => |*cfg| cpu.update(cfg, &state.cpu, &out),
+        .gauge => |*cfg| gauge_widget.update(cfg, &state.cpu, &out),
         .temperature => |*cfg| temp: {
             temperature.start_nvidia_smi(cfg, &state.temperature, &state.script);
             break :temp temperature.update(cfg, &state.temperature, &out);
@@ -199,12 +204,14 @@ fn update(item: *const Widget, state: *State, now: i64) bool {
 fn set(state: *State, out: *const common.Output) bool {
     if (state.hidden == out.hidden
         and state.blink == out.blink
+        and state.gauge.eql(&out.gauge)
         and mem.eql(u8, state.text.items, out.text.items)
         and mem.eql(u8, state.tooltip.items, out.tooltip.items)
         and mem.eql(u8, state.tooltip_on_click.items, out.tooltip_on_click.items)) return false;
 
     state.hidden = out.hidden;
     state.blink = out.blink;
+    state.gauge = out.gauge;
     state.text.clearRetainingCapacity();
     state.text.appendSlice(ctx.gpa, out.text.items) catch return false;
     state.plain.clearRetainingCapacity();

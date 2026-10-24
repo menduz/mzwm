@@ -30,6 +30,7 @@ const ShellSurface = @import("shell_surface.zig");
 const widgets = @import("widgets.zig");
 const tooltip = @import("tooltip.zig");
 const tray = @import("tray.zig");
+const gauge = @import("gauge.zig");
 
 const ctx = Context.get();
 const color_pattern = mvzr.compile("\\^#([0-9a-zA-Z]{8}|!)").?;
@@ -375,6 +376,16 @@ pub fn render(self: *Self) void {
 
 inline fn static_component_width(self: *Self) i32 {
     return self.static_splits.getLastOrNull() orelse 0;
+}
+
+
+/// The height of a tray icon, in physical pixels: `tray.icon_size`, or the
+/// height of the bar. A gauge widget has the same height.
+fn icon_size(self: *const Self) i32 {
+    const bar_h: i32 = @intCast(self.height(false));
+    const cfg = ctx.cfg.bar.tray orelse return bar_h;
+    if (cfg.icon_size == 0) return bar_h;
+    return @min(bar_h, utils.logical2physics(i32, @intCast(cfg.icon_size), self.scale));
 }
 
 
@@ -878,9 +889,7 @@ fn render_dynamic_component(self: *Self) void {
     if (comptime build_options.tray_enabled) draw_tray: {
         const cfg = ctx.cfg.bar.tray orelse break :draw_tray;
         const bar_h: i32 = h;
-        const size: i32 =
-            if (cfg.icon_size > 0) @min(bar_h, utils.logical2physics(i32, @intCast(cfg.icon_size), self.scale))
-            else bar_h;
+        const size = self.icon_size();
         var item_buffer: [max_tray_items]tray.Shown = undefined;
         const shown = tray.visible_items(&item_buffer, size, status_scheme.fg, tray.hovered(self));
         if (shown.len == 0) break :draw_tray;
@@ -1097,9 +1106,20 @@ fn rasterize_status(self: *Self, status_text: []const u8, fg: pixman.Color) !Sta
 
 
 /// The rasterized widgets of one side, with the space between them.
+/// A gauge widget in a row: its bars and its colors. Refer to gauge.zig.
+const GaugeDraw = struct {
+    levels: gauge.Levels,
+    bar_width: i32,
+    height: i32,
+    /// The color of the text: the fill at 80%, and the border at 35% on
+    /// `bg`.
+    fg: u32,
+    bg: u32,
+};
+
 const WidgetRow = struct {
     side: widgets.Side,
-    texts: std.ArrayList(struct { index: usize, text: StatusText }) = .empty,
+    texts: std.ArrayList(struct { index: usize, text: StatusText, gauge: ?GaugeDraw = null }) = .empty,
     gap: u32 = 0,
     width: u32 = 0,
 
@@ -1114,8 +1134,26 @@ fn rasterize_widgets(self: *Self, side: widgets.Side, fg: pixman.Color) !WidgetR
     var row: WidgetRow = .{ .side = side, .gap = @intCast(self.get_pad()) };
     errdefer row.deinit();
 
+    var glyph: ?i32 = null;
     for (0.., widgets.states(side)) |index, state| {
-        if (state.hidden or state.text.items.len == 0) continue;
+        if (state.hidden) continue;
+        if (state.gauge.len > 0) {
+            const bar_width = glyph orelse self.glyph_width();
+            glyph = bar_width;
+            const g: GaugeDraw = .{
+                .levels = state.gauge,
+                .bar_width = bar_width,
+                .height = self.icon_size(),
+                .fg = theme.bar_scheme(.status).normal.fg,
+                .bg = theme.bar_scheme(.status).normal.bg,
+            };
+            if (row.texts.items.len > 0) row.width += row.gap;
+            const text: StatusText = .{ .width = @intCast(gauge.width(state.gauge.len, bar_width)) };
+            row.width += text.width;
+            try row.texts.append(ctx.gpa, .{ .index = index, .text = text, .gauge = g });
+            continue;
+        }
+        if (state.text.items.len == 0) continue;
 
         var text = try self.rasterize_status(widgets.text(&state), fg);
         errdefer text.deinit();
@@ -1152,6 +1190,10 @@ fn draw_widgets(
     var x: i32 = x0 + @as(i32, @intCast(@divFloor(pad, 2)));
     for (row.texts.items) |item| {
         const start = x;
+        if (item.gauge) |g| {
+            draw_gauge(buffer, &g, x, @divFloor(@as(i32, @intCast(self.height(false))) - g.height, 2), bg);
+            x += @intCast(item.text.width);
+        }
         for (item.text.runs.items) |run| {
             const cc, const text = run;
             x += self.font.render_text(buffer, text, &cc, x, y);
@@ -1165,6 +1207,40 @@ fn draw_widgets(
         x += @intCast(row.gap);
     }
 }
+
+/// The width of a glyph of the bar font, in physical pixels: the advance
+/// of "0".
+fn glyph_width(self: *Self) i32 {
+    const utf32 = render_.utils.to_utf8(ctx.gpa, "0") catch return 1;
+    defer ctx.gpa.free(utf32);
+    const run = self.font.rasterize_text_run(utf32) orelse return 1;
+    defer run.destroy();
+    return @max(1, @as(i32, @intCast(render_.utils.text_width(run))));
+}
+
+
+/// Draw a gauge at `x`, with its top at `y`: the border in the inactive
+/// color of the symbolic icons, the inside of each bar in `bg`, and the
+/// fills. Refer to gauge.zig.
+fn draw_gauge(buffer: *render_.Buffer, g: *const GaugeDraw, x: i32, y: i32, bg: *const pixman.Color) void {
+    const levels = g.levels.slice();
+    const l = gauge.layout(levels, x, y, g.bar_width, g.height);
+    fill_rect(buffer, l.box, &render_.utils.color(gauge.border_color(g.fg, g.bg)));
+    for (levels, 0..) |level, i| {
+        fill_rect(buffer, l.insides[i], bg);
+        if (l.fills[i].height > 0) fill_rect(buffer, l.fills[i], &render_.utils.color(gauge.fill_color(g.fg, level)));
+    }
+}
+
+
+fn fill_rect(buffer: *render_.Buffer, r: gauge.Rect, color: *const pixman.Color) void {
+    if (r.width <= 0 or r.height <= 0) return;
+    const rect = [_]pixman.Rectangle16 {
+        .{ .x = @intCast(r.x), .y = @intCast(r.y), .width = @intCast(r.width), .height = @intCast(r.height) },
+    };
+    _ = pixman.Image.fillRectangles(.src, buffer.image, color, 1, &rect);
+}
+
 
 fn show(self: *Self) !void {
     std.debug.assert(!self.hidden);
