@@ -13,7 +13,8 @@
 #                           the raised border of 3 pixels, without the outline
 #
 # <theme> is dark (win-classic-dark) or light (win-classic-standard, the
-# Windows Standard scheme). A title bar preset also has a floating terminal.
+# Windows Standard scheme). The bar takes its colors from the theme. A title
+# bar preset also has a floating terminal.
 set -euo pipefail
 
 out=${1:?usage: kwm-screenshot <output directory> [<preset>]}
@@ -59,7 +60,7 @@ chmod 700 "$XDG_RUNTIME_DIR"
 # The border of the preset: lines of config.def.zon with other values.
 if [ "$border" != default ]; then
   mkdir -p "$XDG_CONFIG_HOME/kwm"
-  python3 - "$DEFAULT_CONFIG" "$border" >"$XDG_CONFIG_HOME/kwm/config.zon" <<'PY'
+  python3 - "$DEFAULT_CONFIG" "$border" "$theme" >"$XDG_CONFIG_HOME/kwm/config.zon" <<'PY'
 import sys
 
 config = open(sys.argv[1]).read()
@@ -71,6 +72,9 @@ changes = {
         ("            .outline = .all,\n", "            .outline = .none,\n"),
     ],
 }[sys.argv[2]]
+# With a GTK theme, the bar takes its colors from xfwm4/themerc of the theme.
+if sys.argv[3]:
+    changes.append(("        .gtk_colors = null,\n", "        .gtk_colors = .{},\n"))
 for old, new in changes:
     if config.count(old) != 1:
         sys.exit(f"kwm-screenshot: config.def.zon has not one line {old.strip()!r}")
@@ -149,7 +153,7 @@ terminal() {
   sleep 1
 }
 terminal 'kwm -h'
-terminal 'printf "%s\n" "tags 1-9" "layouts: tile, grid, monocle, deck," "  scroller, centered master, float" "widgets: memory, clock, cpu, battery," "  disk, scripts, tray"'
+terminal 'printf "%s\n" "tags 1-9" "layouts: tile, grid, monocle, deck," "  scroller, centered master, float" "widgets: gauge (memory, cpu), clock," "  battery, disk, scripts, tray"'
 terminal 'printf "%s\n" "Super+Return  terminal" "Super+Space   launcher" "Super+1..9    tags" "Super+J/K     focus" "Super+Q       close"'
 
 # A floating terminal: config.def.zon makes a window with this title floating.

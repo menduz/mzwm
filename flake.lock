@@ -47,11 +47,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1791234057,
-        "narHash": "sha256-Yc65DpPIXpMAyPbHjRW1albU9Ed7u8h84+bKbdNdIy4=",
-        "ref": "main",
-        "rev": "7e8a9f52b23824050f64cf842747c60b0279306b",
-        "revCount": 68,
+        "lastModified": 1792763924,
+        "narHash": "sha256-6nL2WIRdkvh9VnUUr7AFdtsaw4iN5EZROblebPYqcKc=",
+        "ref": "refs/heads/main",
+        "rev": "e5388655de27b7f336acd1d348c612ce9466ce25",
+        "revCount": 77,
         "type": "git",
         "url": "https://github.com/menduz/win-classic-theme.git"
       },
