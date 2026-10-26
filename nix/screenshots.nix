@@ -97,6 +97,7 @@ let
     "title-bar-flat-light"
     "title-bar-raised-dark"
     "title-bar-raised-light"
+    "maximized-light"
   ];
 in
 {

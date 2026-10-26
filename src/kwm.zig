@@ -189,6 +189,7 @@ test {
     _ = @import("kwm/bar_update.zig");
     _ = @import("kwm/bindings_list.zig");
     _ = @import("kwm/super_hold.zig");
+    _ = @import("kwm/tag_mark.zig");
     if (comptime build_options.overlay_enabled) _ = @import("kwm/vt.zig");
     _ = @import("kwm/child.zig");
     _ = @import("kwm/layout/accordion.zig");

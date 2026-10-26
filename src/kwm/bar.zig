@@ -20,8 +20,9 @@ const theme = @import("theme.zig");
 const types = @import("types.zig");
 const render_ = @import("render.zig");
 const sandbox = @import("sandbox.zig");
+const decoration = @import("decoration.zig");
+const tag_mark = @import("tag_mark.zig");
 const bar_update = @import("bar_update.zig");
-const desktop = @import("desktop.zig");
 const binding = @import("binding.zig");
 const Context = @import("context.zig");
 const Seat = @import("seat.zig");
@@ -567,13 +568,9 @@ fn render_static_component(self: *Self) void {
     const buffer = self.next_buffer(.static, w, h) orelse return;
 
     const windows_tag: u32 = self.output.occupied_tags();
-    const focused_window = ctx.focused_window();
 
     const scheme = theme.bar_scheme(.tags);
     const select_fg = render_.utils.color(scheme.select.fg);
-    const select_bg = render_.utils.color(
-        desktop.select_bg(scheme.select.bg, ctx.desktop_color(), area.select_bg_desktop),
-    );
     const normal_fg = render_.utils.color(scheme.normal.fg);
     const normal_bg = render_.utils.color(scheme.normal.bg);
     const empty_fg = if (theme.bar_empty_fg()) |fg| render_.utils.color(fg) else null;
@@ -593,52 +590,17 @@ fn render_static_component(self: *Self) void {
     for (0.., texts.items) |i, text| {
         const tag: u32 = @as(u32, @intCast(1)) << @as(u5, @intCast(i));
 
-        const is_focused = self.output.tag & tag != 0;
-
         const tag_width = self.tag_cell_width(text, pad, h);
         defer x += @intCast(tag_width);
 
-        if (is_focused) {
-            const tag_rect = [_]pixman.Rectangle16 {
-                .{
-                    .x = x,
-                    .y = 0,
-                    .width = tag_width,
-                    .height = h,
-                }
-            };
-            _ = pixman.Image.fillRectangles(
-                .src,
-                buffer.image,
-                &select_bg,
-                1,
-                &tag_rect,
-            );
+        // A selected tag shows a square in the place of its label.
+        if (self.output.tag & tag != 0) {
+            self.draw_tag_mark(buffer, &select_fg, x, tag_width, y);
+            continue;
         }
 
-        // The box is at the top-left pixel of the tag cell, not of the text.
-        if (windows_tag & tag != 0) {
-            self.fill_box(
-                buffer,
-                false,
-                if (is_focused) &select_fg else &normal_fg,
-                x,
-                0,
-            );
-
-            if (focused_window == null or focused_window.?.tag & tag == 0) {
-                self.fill_box(
-                    buffer,
-                    true,
-                    if (is_focused) &select_bg else &normal_bg,
-                    x,
-                    0,
-                );
-            }
-        }
-
+        // Only the color of the label tells if the tag has windows.
         const fg = if (empty_fg != null and windows_tag & tag == 0) &empty_fg.?
-            else if (is_focused) &select_fg
             else &normal_fg;
         _ = self.font.render_text(
             buffer,
@@ -650,6 +612,39 @@ fn render_static_component(self: *Self) void {
     }
 
     self.static_component.render(buffer, self.scale);
+}
+
+
+/// The mark of a selected tag: a square with round corners, in the center of
+/// the cell of `cell_width` pixels at `x`. It covers the place of a digit and
+/// one logical pixel more on each side. `y` is the top of the text. Refer to
+/// tag_mark.zig.
+fn draw_tag_mark(
+    self: *const Self,
+    buffer: *render_.Buffer,
+    c: *const pixman.Color,
+    x: i16,
+    cell_width: u16,
+    y: i16,
+) void {
+    const margin: i32 = @intCast(@max(1, self.scale / 120));
+    const mark = tag_mark.place(self.font.height(), self.font.font.ascent, margin);
+    const side: i32 = @min(mark.side, @as(i32, cell_width));
+    const top: i32 = @as(i32, y) + mark.top;
+    const left: i32 = @as(i32, x) + @divFloor(@as(i32, cell_width) - side, 2);
+    var row: i32 = 0;
+    while (row < side) : (row += 1) {
+        const in = tag_mark.inset(side, row);
+        var rect = [_]pixman.Rectangle16 {
+            .{
+                .x = @intCast(left + in),
+                .y = @intCast(@max(0, top + row)),
+                .width = @intCast(side - 2 * in),
+                .height = 1,
+            },
+        };
+        _ = pixman.Image.fillRectangles(.src, buffer.image, c, 1, &rect);
+    }
 }
 
 
@@ -768,92 +763,14 @@ fn render_dynamic_component(self: *Self) void {
     bg_rect[0].x = x;
     bg_rect[0].width = w - @as(u16, @intCast(x));
 
+    // The background of the title area. draw_title draws the title after
+    // the widgets.
     const title_start = x;
-    if (ctx.cfg.bar.title) |_| draw_title: {
-        const scheme = theme.bar_scheme(.title);
-        const normal_fg = render_.utils.color(scheme.normal.fg);
-        const normal_bg = render_.utils.color(scheme.normal.bg);
-        const select_fg = render_.utils.color(scheme.select.fg);
-        const select_bg = render_.utils.color(scheme.select.bg);
-
-        const top = ctx.focus_top_in(self.output, false);
-        if (top == null) {
-            _ = pixman.Image.fillRectangles(
-                .src,
-                buffer.image,
-                &normal_bg,
-                1,
-                &bg_rect
-            );
-            break :draw_title;
-        }
-
-        const window = top.?;
-        var fg: *const pixman.Color = undefined;
-        var bg: *const pixman.Color = undefined;
-        if (self.output == ctx.current_output) {
-            fg = &select_fg;
-            bg = &select_bg;
-        } else {
-            fg = &normal_fg;
-            bg = &normal_bg;
-        }
-        _ = pixman.Image.fillRectangles(.src, buffer.image, bg, 1, &bg_rect);
-
-        if (window.sticky) {
-            self.draw_box(buffer, false, .top, fg, x, y);
-        }
-
-        if (window.floating) {
-            self.draw_box(
-                buffer,
-                false,
-                if (window.sticky) .bottom else .top,
-                fg,
-                x,
-                y,
-            );
-
-            self.draw_box(
-                buffer,
-                true,
-                if (window.sticky) .bottom else .top,
-                bg,
-                x,
-                y,
-            );
-        }
-
-        // The window of a sandbox: the name of the sandbox in the color of
-        // the sandbox, before the title. Refer to sandbox.zig.
-        if (window.sandbox_name) |name| draw_sandbox: {
-            const text_w = render_.utils.str_width(self.font.font, name) catch break :draw_sandbox;
-            const cell_w: u16 = @intCast(@min(text_w + pad, @as(u32, w) -| @as(u32, @intCast(x))));
-            const sandbox_bg = render_.utils.color(window.sandbox_color);
-            const sandbox_fg = render_.utils.color(sandbox.text_color(window.sandbox_color));
-            var cell = [_]pixman.Rectangle16 {
-                .{ .x = x, .y = 0, .width = cell_w, .height = h },
-            };
-            _ = pixman.Image.fillRectangles(.src, buffer.image, &sandbox_bg, 1, &cell);
-            _ = self.font.render_str(
-                buffer,
-                name,
-                &sandbox_fg,
-                x+@as(i16, @intCast(@divFloor(pad, 2))),
-                y,
-            );
-            x += @intCast(cell_w);
-        }
-
-        x += self.font.render_str(
-            buffer,
-            window.title orelse "???",
-            fg,
-            x+@as(i16, @intCast(@divFloor(pad, 2))),
-            y,
-        ) + @as(i16, @intCast(pad));
-    } else {
-        const bg = render_.utils.color(theme.bar_base_scheme().normal.bg);
+    {
+        const bg = render_.utils.color(
+            if (ctx.cfg.bar.title != null) theme.bar_scheme(.title).normal.bg
+            else theme.bar_base_scheme().normal.bg
+        );
         _ = pixman.Image.fillRectangles(
             .src,
             buffer.image,
@@ -984,9 +901,112 @@ fn render_dynamic_component(self: *Self) void {
         self.draw_widgets(buffer, &center, center_x, @intCast(status_x), &status_bg, pad, y);
     }
 
-    self.dynamic_splits.items[self.dynamic_splits.items.len-1] = @min(center_x, status_x);
+    const title_end = @min(center_x, status_x);
+    self.dynamic_splits.items[self.dynamic_splits.items.len-1] = title_end;
+    self.draw_title(buffer, title_start, title_end);
 
     self.dynamic_component.render(buffer, self.scale);
+}
+
+
+/// The title of the focused window, from `start` to `end`. The widgets are
+/// at the right of `end`: the title stops there, and the gradient of a
+/// caption ends there, as in a title bar.
+fn draw_title(self: *Self, buffer: *render_.Buffer, start: i16, end: i16) void {
+    if (end <= start) return;
+    const area = ctx.cfg.bar.title orelse return;
+    const window = ctx.focus_top_in(self.output, false) orelse return;
+    if (!decoration.bar_shows_title(area.only_without_title_bar, window.has_title_bar())) return;
+
+    const pad = self.get_pad();
+    const h: u16 = @intCast(self.height(false));
+    const y = self.text_y();
+    const width: u16 = @intCast(end - start);
+
+    // The text of a long title must not go on the widgets.
+    var clip: pixman.Region16 = undefined;
+    clip.initRect(start, 0, width, h);
+    defer clip.deinit();
+    _ = buffer.image.setClipRegion(&clip);
+    defer {
+        var all: pixman.Region16 = undefined;
+        all.initRect(0, 0, @intCast(buffer.width), h);
+        _ = buffer.image.setClipRegion(&all);
+        all.deinit();
+    }
+
+    const colors = theme.bar_title(self.output == ctx.current_output);
+    const fg = render_.utils.color(colors.fg);
+    const bg = render_.utils.color(colors.start);
+    if (colors.start == colors.end) {
+        var rect = [_]pixman.Rectangle16 {
+            .{ .x = start, .y = 0, .width = width, .height = h },
+        };
+        _ = pixman.Image.fillRectangles(.src, buffer.image, &bg, 1, &rect);
+    } else {
+        var col: i32 = 0;
+        while (col < width) : (col += 1) {
+            const c = render_.utils.color(decoration.gradient(colors.start, colors.end, col, width));
+            var rect = [_]pixman.Rectangle16 {
+                .{ .x = @intCast(start + col), .y = 0, .width = 1, .height = h },
+            };
+            _ = pixman.Image.fillRectangles(.src, buffer.image, &c, 1, &rect);
+        }
+    }
+
+    var x = start;
+    if (window.sticky) {
+        self.draw_box(buffer, false, .top, &fg, x, y);
+    }
+
+    if (window.floating) {
+        self.draw_box(
+            buffer,
+            false,
+            if (window.sticky) .bottom else .top,
+            &fg,
+            x,
+            y,
+        );
+
+        self.draw_box(
+            buffer,
+            true,
+            if (window.sticky) .bottom else .top,
+            &bg,
+            x,
+            y,
+        );
+    }
+
+    // The window of a sandbox: the name of the sandbox in the color of the
+    // sandbox, before the title. Refer to sandbox.zig.
+    if (window.sandbox_name) |name| draw_sandbox: {
+        const text_w = render_.utils.str_width(self.font.font, name) catch break :draw_sandbox;
+        const cell_w: u16 = @intCast(@min(text_w + pad, width));
+        const sandbox_bg = render_.utils.color(window.sandbox_color);
+        const sandbox_fg = render_.utils.color(sandbox.text_color(window.sandbox_color));
+        var cell = [_]pixman.Rectangle16 {
+            .{ .x = x, .y = 0, .width = cell_w, .height = h },
+        };
+        _ = pixman.Image.fillRectangles(.src, buffer.image, &sandbox_bg, 1, &cell);
+        _ = self.font.render_str(
+            buffer,
+            name,
+            &sandbox_fg,
+            x+@as(i16, @intCast(@divFloor(pad, 2))),
+            y,
+        );
+        x += @intCast(cell_w);
+    }
+
+    _ = self.font.render_str(
+        buffer,
+        window.title orelse "???",
+        &fg,
+        x+@as(i16, @intCast(@divFloor(pad, 2))),
+        y,
+    );
 }
 
 

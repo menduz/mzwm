@@ -309,14 +309,11 @@ pub inline fn get() *Self {
 
 
 /// The color of the desktop changed: the configuration or the GTK theme.
-/// Fill the backgrounds again, and draw the tags of the bars again (refer to
-/// `select_bg_desktop`).
+/// Fill the backgrounds again.
 pub fn desktop_color_changed(self: *Self) void {
+    if (comptime !build_options.background_enabled) return;
     var it = self.outputs.safeIterator(.forward);
-    while (it.next()) |output| {
-        if (comptime build_options.background_enabled) output.background.damage();
-        if (comptime build_options.bar_enabled) output.bar.damage(.tags);
-    }
+    while (it.next()) |output| output.background.damage();
 }
 
 

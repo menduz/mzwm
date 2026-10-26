@@ -17,8 +17,19 @@ set -euo pipefail
 
 TEST_NAME=gauge
 
-TEST_KWM_CONFIG=$(sed 's/^        \.end = \.{},$/        .end = .{ .{ .gauge = .{} } },/' "$TEST_DEFAULT_CONFIG")
-grep -q '\.gauge = ' <<<"$TEST_KWM_CONFIG"
+# config.def.zon with only a gauge of the default values at the right end.
+TEST_KWM_CONFIG=$(python3 - "$TEST_DEFAULT_CONFIG" <<'PY'
+import re
+import sys
+
+config, count = re.subn(r"^        \.end = \.\{\n.*?^        \},\n",
+                        "        .end = .{ .{ .gauge = .{} } },\n",
+                        open(sys.argv[1]).read(), count=1, flags=re.M | re.S)
+if count != 1:
+    sys.exit("kwm-test-gauge: config.def.zon has no end widgets")
+print(config, end="")
+PY
+)
 
 # shellcheck source=test-lib.sh
 source "$TEST_LIB"

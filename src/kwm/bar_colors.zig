@@ -56,6 +56,25 @@ pub fn themed(base: Bar.Scheme, keys: ?Bar.GtkColors, lookup: Lookup) Bar.Scheme
 }
 
 
+/// The colors of a title bar: a gradient from `start` at the left to `end`
+/// at the right, and the text color. Refer to theme.zig.
+pub const Caption = struct {
+    start: u32,
+    end: u32,
+    fg: u32,
+};
+
+
+/// The colors of the title of the focused window. `focused`: the output has
+/// the focus. `caption`: the colors of the title bar, null: the colors of
+/// the scheme, without a gradient.
+pub fn title(s: Bar.Scheme, focused: bool, caption: ?Caption) Caption {
+    if (caption) |c| return c;
+    const color = if (focused) s.select else s.normal;
+    return .{ .start = color.bg, .end = color.bg, .fg = color.fg };
+}
+
+
 const base_scheme: Bar.Scheme = .{
     .normal = .{ .fg = 0xa1a1a1ff, .bg = 0x000000ff },
     .select = .{ .fg = 0xffffffff, .bg = 0x000000ff },
@@ -118,4 +137,21 @@ test "themed_empty_fg: the color of the theme, else of the configuration" {
     // The theme gives the color, also when the configuration gives none.
     try testing.expectEqual(@as(?u32, 0x808080ff), themed_empty_fg(null, .{}, light_theme));
     try testing.expectEqual(@as(?u32, null), themed_empty_fg(null, .{}, no_theme));
+}
+
+test "title: the scheme, selected on the focused output, without a gradient" {
+    const select = title(base_scheme, true, null);
+    try testing.expectEqual(base_scheme.select.fg, select.fg);
+    try testing.expectEqual(base_scheme.select.bg, select.start);
+    try testing.expectEqual(base_scheme.select.bg, select.end);
+    const normal = title(base_scheme, false, null);
+    try testing.expectEqual(base_scheme.normal.fg, normal.fg);
+    try testing.expectEqual(base_scheme.normal.bg, normal.start);
+    try testing.expectEqual(base_scheme.normal.bg, normal.end);
+}
+
+test "title: the caption replaces the scheme" {
+    const caption: Caption = .{ .start = 0x000080ff, .end = 0x1084d0ff, .fg = 0xffffffff };
+    try testing.expectEqual(caption, title(base_scheme, true, caption));
+    try testing.expectEqual(caption, title(base_scheme, false, caption));
 }

@@ -52,10 +52,6 @@ tags: ?struct {
     tags: []const []const u8,
     /// Text color of the tags without windows. null uses the color of the scheme.
     empty_fg: ?u32 = null,
-    /// The background of the selected tags is the color of the desktop
-    /// (refer to `background` and `background_gtk_color`), not `select.bg`
-    /// of the scheme.
-    select_bg_desktop: bool = false,
     click: meta.enum_struct(
         kwm.Button,
         ?kwm.BindingAction
@@ -95,6 +91,18 @@ layout: ?struct {
 },
 
 title: ?struct {
+    /// The title area has the colors of a title bar of win-classic-theme
+    /// (xfwm4/themerc of the current GTK theme), with its gradient and
+    /// without a border: the colors of the focused window on the focused
+    /// output, and of a window without focus on the other outputs. The
+    /// gradient ends where the widgets start. These colors replace the
+    /// colors of the scheme. Refer to src/kwm/bar_colors.zig.
+    caption: bool = false,
+    /// Show the title only when the focused window has no title bar of kwm:
+    /// a window with client side decorations, a maximized or fullscreen
+    /// window, or a tiled window that fills the output (one window with
+    /// smart_gaps, monocle). Refer to src/kwm/decoration.zig.
+    only_without_title_bar: bool = true,
     click: meta.enum_struct(
         kwm.Button,
         ?kwm.BindingAction

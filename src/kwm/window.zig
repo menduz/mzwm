@@ -1037,6 +1037,13 @@ fn outline_inset(self: *const Self) i32 {
 fn render_title_bar(self: *Self) void {
     if (comptime !build_options.bar_enabled) return;
 
+    // The bar can show the title only while the window has no title bar.
+    // Refer to `bar.title.only_without_title_bar`.
+    const had_title_bar = self.title_bar != null;
+    defer if ((self.title_bar != null) != had_title_bar) {
+        if (self.output) |o| o.bar.damage(.title);
+    };
+
     const output = self.output orelse return self.remove_title_bar();
     if (!self.has_title_bar() or self.width <= 0) return self.remove_title_bar();
 

@@ -56,6 +56,14 @@ pub fn has_title_bar(window: Window) bool {
 }
 
 
+/// The bar shows the title of the focused window. With
+/// `only_without_title_bar`, only when the window has no title bar: the bar
+/// then holds the title in place of the title bar.
+pub fn bar_shows_title(only_without_title_bar: bool, title_bar: bool) bool {
+    return !only_without_title_bar or !title_bar;
+}
+
+
 /// The space on each side between a tiled window with client side
 /// decorations and its place in the layout: `border.csd_margin` of the
 /// configuration. With the raised style, the outline of 1 pixel is the outside
@@ -320,4 +328,11 @@ test "drag_moves: a tiled window only by its title bar" {
     try testing.expect(!drag_moves(.{ .floating = false, .maximized = false, .fullscreen = false, .title = false, .tiled_moves = true }));
     try testing.expect(!drag_moves(.{ .floating = false, .maximized = false, .fullscreen = false, .title = true, .tiled_moves = false }));
     try testing.expect(!drag_moves(.{ .floating = false, .maximized = true, .fullscreen = false, .title = true, .tiled_moves = true }));
+}
+
+test "bar_shows_title: always, or only without a title bar" {
+    try testing.expect(bar_shows_title(false, true));
+    try testing.expect(bar_shows_title(false, false));
+    try testing.expect(!bar_shows_title(true, true));
+    try testing.expect(bar_shows_title(true, false));
 }

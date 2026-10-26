@@ -6,11 +6,13 @@
 #
 # The presets, each one in <preset>.png:
 #
-#   kwm                     config.def.zon (the default)
+#   kwm                     config.def.zon (the default border)
 #   title-bar-flat-<theme>  the flat border of 1 pixel: an outline, without
 #                           the 3D edges
 #   title-bar-raised-<theme>
 #                           the raised border of 3 pixels, without the outline
+#   maximized-light         one terminal, that fills the output: it has no
+#                           title bar, and the bar shows its title
 #
 # <theme> is dark (win-classic-dark) or light (win-classic-standard, the
 # Windows Standard scheme). The bar takes its colors from the theme. A title
@@ -27,6 +29,7 @@ case $preset in
   title-bar-flat-light) border=flat theme=win-classic-standard ;;
   title-bar-raised-dark) border=raised theme=win-classic-dark ;;
   title-bar-raised-light) border=raised theme=win-classic-standard ;;
+  maximized-light) border=raised theme=win-classic-standard ;;
   *)
     echo "kwm-screenshot: unknown preset: $preset" >&2
     exit 1
@@ -57,14 +60,17 @@ export XDG_RUNTIME_DIR=$work/run
 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
 
-# The border of the preset: lines of config.def.zon with other values.
-if [ "$border" != default ]; then
-  mkdir -p "$XDG_CONFIG_HOME/kwm"
-  python3 - "$DEFAULT_CONFIG" "$border" "$theme" >"$XDG_CONFIG_HOME/kwm/config.zon" <<'PY'
+# config.def.zon with other values in some lines: a rule that puts the
+# window "OtherTag" on tag 3, and the border of the preset.
+mkdir -p "$XDG_CONFIG_HOME/kwm"
+python3 - "$DEFAULT_CONFIG" "$border" "$theme" >"$XDG_CONFIG_HOME/kwm/config.zon" <<'PY'
 import sys
 
 config = open(sys.argv[1]).read()
-changes = {
+rules = "    .window_rules = .{\n"
+changes = [(rules, rules + '        .{ .title = .{ .str = "OtherTag" }, .tag = 4 },\n')]
+changes += {
+    "default": [],
     "flat": [("        .width = 2,\n", "        .width = 1,\n")],
     "raised": [
         ("        .width = 2,\n", "        .width = 3,\n"),
@@ -72,16 +78,17 @@ changes = {
         ("            .outline = .all,\n", "            .outline = .none,\n"),
     ],
 }[sys.argv[2]]
-# With a GTK theme, the bar takes its colors from xfwm4/themerc of the theme.
+# With a GTK theme, the bar takes its colors from xfwm4/themerc of the theme,
+# and the title has the colors of a title bar.
 if sys.argv[3]:
     changes.append(("        .gtk_colors = null,\n", "        .gtk_colors = .{},\n"))
+    changes.append(("            .caption = false,\n", "            .caption = true,\n"))
 for old, new in changes:
     if config.count(old) != 1:
         sys.exit(f"kwm-screenshot: config.def.zon has not one line {old.strip()!r}")
     config = config.replace(old, new)
 print(config, end="")
 PY
-fi
 
 # The GTK theme of the title bars and of the raised border.
 if [ -n "$theme" ]; then
@@ -139,8 +146,9 @@ sleep 1
 python3 "$TRAY_SCRIPT" audio-volume-high network-wireless-signal-excellent bluetooth-active &
 pids+=("$!")
 
-# Three terminals. Each one opens after the one before, so the tile layout
-# always gives the same places.
+# Three terminals, or one for the maximized preset. Each one opens after the
+# one before, so the tile layout always gives the same places. Before them,
+# a terminal on tag 3: the bar shows tag 3 in the color of a tag with windows.
 cat >"$work/foot.ini" <<FOOT
 font=DejaVu Sans Mono:size=9
 pad=6x6
@@ -152,12 +160,19 @@ terminal() {
   pids+=("$!")
   sleep 1
 }
-terminal 'kwm -h'
-terminal 'printf "%s\n" "tags 1-9" "layouts: tile, grid, monocle, deck," "  scroller, centered master, float" "widgets: gauge (memory, cpu), clock," "  battery, disk, scripts, tray"'
-terminal 'printf "%s\n" "Super+Return  terminal" "Super+Space   launcher" "Super+1..9    tags" "Super+J/K     focus" "Super+Q       close"'
+terminal 'true' --title=OtherTag
+if [ "$preset" = maximized-light ]; then
+  # With smart_gaps, the one window fills the output. kwm gives it no title
+  # bar, and the bar shows its title.
+  terminal 'printf "%s\n" "the one window fills the output" "the bar shows its title"' --title=Maximized
+else
+  terminal 'kwm -h'
+  terminal 'printf "%s\n" "tags 1-9" "layouts: tile, grid, monocle, deck," "  scroller, centered master, float" "widgets: gauge (memory, cpu), clock," "  battery, disk, scripts, tray"'
+  terminal 'printf "%s\n" "Super+Return  terminal" "Super+Space   launcher" "Super+1..9    tags" "Super+J/K     focus" "Super+Q       close"'
+fi
 
 # A floating terminal: config.def.zon makes a window with this title floating.
-if [ "$preset" != kwm ]; then
+if [ "$preset" != kwm ] && [ "$preset" != maximized-light ]; then
   terminal 'printf "%s\n" "a floating window" "with a title bar"' --title=FloatingTerminal --window-size-chars=40x6
 fi
 

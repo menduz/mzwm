@@ -69,7 +69,7 @@ pub fn set_gtk_theme(name: []const u8) void {
 
     load(&colors, name);
     ctx.desktop_color_changed();
-    if (ctx.cfg.bar.gtk_colors != null) ctx.bar_colors_changed();
+    if (ctx.cfg.bar.gtk_colors != null or bar_caption()) ctx.bar_colors_changed();
     ctx.manage_dirty(@src());
 }
 
@@ -101,6 +101,23 @@ pub fn bar_scheme(area: bar_colors.Bar.BarArea) bar_colors.Bar.Scheme {
 /// current GTK theme.
 pub fn bar_base_scheme() bar_colors.Bar.Scheme {
     return bar_colors.themed(ctx.cfg.bar.scheme, ctx.cfg.bar.gtk_colors, color);
+}
+
+
+/// The colors of the title area of the bar. `focused`: the output has the
+/// focus. Refer to `bar.title.caption` in the configuration.
+pub fn bar_title(focused: bool) bar_colors.Caption {
+    const caption: ?bar_colors.Caption = if (bar_caption()) blk: {
+        const c = title_colors_of(null, focused);
+        break :blk .{ .start = c.start, .end = c.end, .fg = c.text };
+    } else null;
+    return bar_colors.title(bar_scheme(.title), focused, caption);
+}
+
+
+fn bar_caption() bool {
+    const area = ctx.cfg.bar.title orelse return false;
+    return area.caption;
 }
 
 

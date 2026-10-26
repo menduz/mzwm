@@ -4,9 +4,8 @@
 # the portal. Run it with the environment of `kwm-test-theme` in tests.nix.
 # Refer to src/kwm/settings_portal.zig.
 #
-# kwm also fills the desktop and the selected tag of the bar with the desktop
-# color of the theme (background_gtk_color, select_bg_desktop). Refer to
-# src/kwm/desktop.zig.
+# kwm also fills the desktop with the desktop color of the theme
+# (background_gtk_color). Refer to src/kwm/desktop.zig.
 #
 # Usage: kwm-test-theme
 set -euo pipefail
@@ -16,10 +15,9 @@ TEST_NAME=theme
 # config.def.zon with the desktop color of the theme.
 TEST_KWM_CONFIG=$(sed \
   -e 's|^    .background_gtk_color = null,|    .background_gtk_color = "desktop_color",|' \
-  -e 's|^            .select_bg_desktop = false,|            .select_bg_desktop = true,|' \
   "$TEST_DEFAULT_CONFIG")
-if [ "$(grep -cE '^    .background_gtk_color = "desktop_color",|^            .select_bg_desktop = true,' <<<"$TEST_KWM_CONFIG")" != 2 ]; then
-  echo "kwm-test-theme: config.def.zon has no background_gtk_color or select_bg_desktop line" >&2
+if ! grep -qE '^    .background_gtk_color = "desktop_color",' <<<"$TEST_KWM_CONFIG"; then
+  echo "kwm-test-theme: config.def.zon has no background_gtk_color line" >&2
   exit 1
 fi
 
@@ -100,26 +98,24 @@ PY
 }
 
 # expect_desktop <rrggbb> <min desktop> <description>: the desktop (below
-# the bar) has at least <min desktop> pixels of the color, and the selected
-# tag in the bar (the top 12 rows) has at least 50.
+# the bar) has at least <min desktop> pixels of the color.
 expect_desktop() {
-  local desktop=0 tag=0
+  local desktop=0
   for _ in $(seq 25); do
     sleep 0.2
     grim "$work/shot.png"
     desktop=$(pixels "$work/shot.png" "$1" 40 10000)
-    tag=$(pixels "$work/shot.png" "$1" 0 11)
-    if [ "$desktop" -ge "$2" ] && [ "$tag" -ge 50 ]; then
+    if [ "$desktop" -ge "$2" ]; then
       echo "ok: $3"
       return
     fi
   done
-  echo "FAIL: $3 (pixels of #$1: desktop $desktop, selected tag $tag)"
+  echo "FAIL: $3 (pixels of #$1: desktop $desktop)"
   failed=1
 }
 
 # Without windows, the desktop fills the screen below the bar.
-expect_desktop 0a1b2c 100000 "the desktop and the selected tag have the desktop color of the theme"
+expect_desktop 0a1b2c 100000 "the desktop has the desktop color of the theme"
 
 # Two windows with server side decorations: both have a title bar.
 open a --decoration
@@ -130,7 +126,7 @@ expect_caption 112233 "at the start, kwm reads the GTK theme of the portal"
 kill -USR1 "$portal"
 expect_caption 445566 "at SettingChanged, kwm reads the colors of the new GTK theme"
 # The gaps between the windows show the desktop.
-expect_desktop 3a6ea5 1000 "at SettingChanged, the desktop and the selected tag change color"
+expect_desktop 3a6ea5 1000 "at SettingChanged, the desktop changes color"
 
 rm -rf "$themes"
 if [ "$failed" -ne 0 ]; then
