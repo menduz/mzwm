@@ -27,6 +27,7 @@ const binding = @import("binding.zig");
 const Context = @import("context.zig");
 const Seat = @import("seat.zig");
 const Output = @import("output.zig");
+const Window = @import("window.zig");
 const ShellSurface = @import("shell_surface.zig");
 const widgets = @import("widgets.zig");
 const tooltip = @import("tooltip.zig");
@@ -249,6 +250,22 @@ fn tray_rect_at(self: *const Self, x: i32) ?TrayRect {
 
 /// True when the pointer at `surface_x` on `surface` is on an item of the
 /// tray of this bar.
+/// The window whose title the bar shows at `surface_x` of `surface`: a press
+/// there can move the window. null: not the title area, or no title.
+pub fn title_window_at(self: *const Self, surface: *wl.Surface, surface_x: i32) ?*Window {
+    if (self.hidden or surface != self.dynamic_component.wl_surface) return null;
+    const area = ctx.cfg.bar.title orelse return null;
+    // The splits of the mode, the layout and the title.
+    const splits = self.dynamic_splits.items;
+    if (splits.len < 3) return null;
+    const x = utils.logical2physics(i32, surface_x, self.scale);
+    if (x <= splits[1] or x > splits[2]) return null;
+    const window = ctx.focus_top_in(self.output, false) orelse return null;
+    if (!decoration.bar_shows_title(area.only_without_title_bar, window.has_title_bar())) return null;
+    return window;
+}
+
+
 pub fn over_tray(self: *const Self, surface: *wl.Surface, surface_x: i32) bool {
     if (self.hidden or surface != self.dynamic_component.wl_surface) return false;
     return self.tray_rect_at(utils.logical2physics(i32, surface_x, self.scale)) != null;

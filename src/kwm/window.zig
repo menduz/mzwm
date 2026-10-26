@@ -28,6 +28,7 @@ const sandbox = @import("sandbox.zig");
 const SandboxLabel = if (build_options.bar_enabled) @import("sandbox_label.zig") else void;
 const TitleBar = if (build_options.bar_enabled) @import("title_bar.zig") else void;
 const decoration_zig = @import("decoration.zig");
+const drag_zig = @import("drag.zig");
 const force_close = @import("force_close.zig");
 
 pub const Decoration = enum {
@@ -49,6 +50,8 @@ pub const ResizeDirection = struct {
 const MoveState = union(enum) {
     const Data = struct {
         seat: *Seat,
+        /// A press on the title of the window in the bar.
+        from_bar: bool = false,
     };
 
     start: Data,
@@ -194,6 +197,12 @@ operator: union(enum) {
         /// The window is tiled. It becomes floating after a distance. Refer
         /// to drag.zig.
         tiled: bool,
+        /// A drag of the title in the bar: at the first delta that moves
+        /// the window, the window goes under the pointer. Refer to
+        /// `detach_from_bar`.
+        detach: bool = false,
+        /// The window was maximized or filled the output at the start.
+        full: bool = false,
         seat: *Seat,
     },
     resize: struct {
@@ -250,7 +259,9 @@ pub fn destroy(self: *Self) void {
         while (it.next()) |seat| {
             // The keyboard can be on this window after a drag. Refer to
             // refocus.zig.
-            if (seat.decoration_move == self) seat.decoration_move = null;
+            if (seat.decoration_move) |pressed| {
+                if (pressed.window == self) seat.decoration_move = null;
+            }
 
             seat.refocus.window_closed(switch (seat.previous_focused) {
                 .window => |window| if (self == window) .this_window else .other_window,
@@ -1111,6 +1122,56 @@ pub fn float_from_drag(self: *Self, width: i32, height: i32) void {
 }
 
 
+/// The pointer moves a window by its title in the bar: it floats, not
+/// maximized. A window that had a place as large as the output (`full`) gets
+/// the floating size that kwm remembers or two thirds of the output; another
+/// window keeps its size at the start of the move. Its title bar goes under
+/// the pointer, at the same place along the width. `start_x`, `start_width`
+/// and `start_height` are the place of the window at the press at `press_x`.
+/// The pointer is at (`pointer_x`, `pointer_y`). The coordinates of the
+/// pointer are those of the compositor. Refer to drag.zig.
+pub fn detach_from_bar(
+    self: *Self,
+    start_x: i32,
+    start_width: i32,
+    start_height: i32,
+    full: bool,
+    press_x: i32,
+    pointer_x: i32,
+    pointer_y: i32,
+) void {
+    const output = self.output orelse return;
+    const current: drag_zig.Size = .{ .width = start_width, .height = start_height };
+    const remembered: ?drag_zig.Size =
+        if (!ctx.cfg.remember_floating_geometry) null
+        else if (self.floating_geometry) |g| .{ .width = g.width, .height = g.height }
+        else null;
+
+    self.toggle_floating(true);
+    self.toggle_maximize(false);
+
+    const size = drag_zig.detach_size(full, current, remembered, .{
+        .width = output.exclusive_width(),
+        .height = output.exclusive_height(),
+    });
+    self.unbound_resize(size.width, size.height);
+    const origin_x = output.exclusive_x();
+    const origin_y = output.exclusive_y();
+    const target = drag_zig.detach_place(
+        size,
+        start_x,
+        start_width,
+        press_x - origin_x,
+        pointer_x - origin_x,
+        pointer_y - origin_y,
+        self.title_above(),
+        @divFloor(decoration_zig.caption_height, 2),
+    );
+    self.unbound_move(target.x, target.y);
+    ctx.manage_dirty(@src());
+}
+
+
 pub fn toggle_floating(self: *Self, flag: ?bool) void {
     const floating = flag orelse !self.floating;
     if (self.floating == floating) return;
@@ -1375,7 +1436,11 @@ pub fn handle_events(self: *Self) void {
                                 .start_height = self.height,
                                 .pointer_x = data.seat.pointer_position.x,
                                 .pointer_y = data.seat.pointer_position.y,
-                                .tiled = self.managed_by_layout(),
+                                // A maximized window of the float layout
+                                // also stays in its place until the distance.
+                                .tiled = self.managed_by_layout() or (data.from_bar and self.maximize),
+                                .detach = data.from_bar,
+                                .full = self.maximize or self.fills_output(),
                                 .seat = data.seat,
                             },
                         };

@@ -11,6 +11,9 @@
 # - When the stack has windows, a new master window adds one master window.
 # - When a master window closes and the master area has more than one
 #   window, the master area gets one window less (src/kwm/nmaster.zig).
+# - A drag of the title of a window in the bar (the window fills the output)
+#   makes the window floating, with two thirds of the area, under the pointer.
+#   A window that draws its own title bar keeps its size, under the pointer.
 #
 # config.def.zon has the tile layout with the master area at the left, one
 # master window, and new windows at the top (the master window).
@@ -275,6 +278,118 @@ expect_state b " tiled=1 .* width=1262 " "again two master windows in one column
 drag_out_to 3 360
 expect_state c " tiled=1 .* width=$master_width " "with a larger nmaster, a drop at the left edge makes the window the master window"
 expect_state b " tiled=1 .* width=$stack_width " "the other window goes to the stack"
+
+# The title of a window in the bar. A window alone fills the output: it has
+# no title bar, and the bar shows its title. A drag of that title makes the
+# window floating, with two thirds of the size of the area below the bar,
+# and its title bar under the pointer.
+close b
+close c
+open e --decoration
+expect_state e "^maximized=1 .* tiled=1 .* width=1280 " "e alone fills the output"
+# The bar is 20 pixels high. The tags and the layout end before x 300.
+input move 300 10
+input press
+input release
+expect_state e "^maximized=1 .* tiled=1 .* width=1280 " "a click on the title in the bar keeps the window in its place"
+input press
+input move 300 30
+expect_state e "^maximized=1 .* tiled=1 .* width=1280 " "a move of 20 pixels from the bar keeps the window in its place"
+# At y 150, the window (466 pixels high) stays on the output: kwm does
+# not move it up.
+input move 400 150
+expect_state e "^maximized=0 .* tiled=0 .* width=853 height=466$" \
+  "a move of the title in the bar makes the window floating, with two thirds of the area"
+input release
+expect_state e "^maximized=0 .* tiled=0 .* width=853 height=466$" "after the release, the window stays floating"
+# The press was at x 300 of 1280: the pointer stays at that place along the
+# width (x 400 - 300 * 853 / 1280 = 201), on the caption.
+read -r ex ey <<<"$(focused_caption e)"
+if [ "$ex" -ge 199 ] && [ "$ex" -le 203 ] && [ "$ey" -le 150 ] && [ "$ey" -gt $((150 - 18)) ]; then
+  echo "ok: the title bar is under the pointer (caption at $ex $ey)"
+else
+  echo "FAIL: the title bar is under the pointer (caption at $ex $ey, pointer at 400 150)"
+  failed=1
+fi
+
+# focus_box <png>: the box of the border of the focused window, as
+# "x0 y0 x1 y1".
+focus_box() {
+  python3 - "$1" <<'PY'
+import sys
+from PIL import Image
+image = Image.open(sys.argv[1]).convert("RGB")
+width, height = image.size
+pixels = image.load()
+points = [(x, y) for y in range(height) for x in range(width) if pixels[x, y] == (0xf2, 0x97, 0x18)]
+xs, ys = [p[0] for p in points], [p[1] for p in points]
+print(min(xs), min(ys), max(xs), max(ys)) if points else print("none")
+PY
+}
+
+# A window that draws its own title bar (no xdg-decoration) in the stack, at
+# the right: the bar shows its title. A drag of that title puts the window
+# under the pointer, with its size in the layout.
+close e
+open f
+open g --decoration
+# The steps above gave the master area more windows: Super+Shift+L makes it
+# one window again.
+for _ in 1 2 3; do
+  input key 125 down
+  input key 42 down
+  input key 38 down
+  input key 38 up
+  input key 42 up
+  input key 125 up
+done
+expect_state g " tiled=1 " "g is tiled"
+expect_state f " tiled=1 decoration=none " "f, without a title bar of kwm, is tiled"
+# A click on f gives it the focus. f goes to the right half: the press on
+# its title in the bar, at x 300, is then not on f.
+input move 1000 400
+input press
+input release
+if ! grep -q " activated=1 " "$work/f.state"; then
+  input move 300 400
+  input press
+  input release
+fi
+expect_state f " activated=1 " "a click gives f the focus"
+grim "$work/shot.png"
+read -r fx0 _ <<<"$(focus_box "$work/shot.png")"
+if [ "$fx0" -lt 400 ]; then
+  # Super+Shift+J: f changes place with the next window.
+  input key 125 down
+  input key 42 down
+  input key 36 down
+  input key 36 up
+  input key 42 up
+  input key 125 up
+  sleep 0.5
+fi
+grim "$work/shot.png"
+read -r fx0 _ <<<"$(focus_box "$work/shot.png")"
+if [ "$fx0" -gt 400 ]; then
+  echo "ok: f is at the right half ($fx0)"
+else
+  echo "FAIL: f is at the right half ($fx0)"
+  failed=1
+fi
+f_width=$(field f width)
+input move 300 10
+input press
+input move 300 300
+expect_state f " tiled=0 .* width=$f_width " "a move of the title in the bar makes f floating, with its size"
+input release
+grim "$work/shot.png"
+read -r fx0 fy0 fx1 fy1 <<<"$(focus_box "$work/shot.png")"
+if [ "$fx0" != none ] && [ "$fx0" -le 300 ] && [ 300 -le "$fx1" ] && [ "$fy0" -le 300 ] && [ 300 -le "$fy1" ]; then
+  echo "ok: f is under the pointer ($fx0 $fy0 $fx1 $fy1)"
+else
+  echo "FAIL: f is under the pointer (border at $fx0 $fy0 $fx1 $fy1, pointer at 300 300)"
+  failed=1
+fi
 
 if [ "$failed" -ne 0 ]; then
   echo "kwm-test-drag: the log of kwm:" >&2

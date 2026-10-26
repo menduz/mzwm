@@ -70,9 +70,13 @@ previous_focused: union(enum) {
 } = .none,
 /// Clear the focus once after a window closes. Refer to refocus.zig.
 refocus: refocus_zig.State = .{},
-/// A press on the title bar or on the border of this floating window. The
-/// next manage sequence starts to move it, as the pointer_move binding does.
-decoration_move: ?*Window = null,
+/// A press on the title bar or on the border of this floating window, or on
+/// its title in the bar. The next manage sequence starts to move it, as the
+/// pointer_move binding does.
+decoration_move: ?struct {
+    window: *Window,
+    from_bar: bool = false,
+} = null,
 pointer_position: struct {
     x: i32 = 0,
     y: i32 = 0,
@@ -223,10 +227,10 @@ pub fn manage(self: *Self) void {
     defer self.pointer_position.new = false;
 
     // A press on a decoration of a floating window moves it.
-    if (self.decoration_move) |window| {
+    if (self.decoration_move) |move| {
         self.decoration_move = null;
-        self.window_interaction(window);
-        window.prepare_move(.{ .start = .{ .seat = self } });
+        self.window_interaction(move.window);
+        move.window.prepare_move(.{ .start = .{ .seat = self, .from_bar = move.from_bar } });
     }
 
     // TODO: https://codeberg.org/river/river/issues/1317
@@ -1002,7 +1006,25 @@ fn rwm_seat_listener(rwm_seat: *river.SeatV1, event: river.SeatV1.Event, seat: *
                         if (op_data.tiled) {
                             if (!drag_zig.floats(data.dx, data.dy, ctx.cfg.drag.float_distance)) return;
                             op_data.tiled = false;
-                            window.float_from_drag(op_data.start_width, op_data.start_height);
+                            if (!op_data.detach) {
+                                window.float_from_drag(op_data.start_width, op_data.start_height);
+                            }
+                        }
+                        // A drag from the bar: the window goes under the
+                        // pointer once, and the move continues from there.
+                        if (op_data.detach) {
+                            op_data.detach = false;
+                            window.detach_from_bar(
+                                op_data.start_x,
+                                op_data.start_width,
+                                op_data.start_height,
+                                op_data.full,
+                                op_data.pointer_x,
+                                op_data.pointer_x + data.dx,
+                                op_data.pointer_y + data.dy,
+                            );
+                            op_data.start_x = window.x - data.dx;
+                            op_data.start_y = window.y - data.dy;
                         }
                         window.move(
                             op_data.start_x+data.dx,
@@ -1250,6 +1272,22 @@ fn wl_pointer_listener(wl_pointer: *wl.Pointer, event: wl.Pointer.Event, seat: *
                 seat.decoration_move = null;
                 return;
             }
+
+            // The title of a window in the bar, as its title bar: a drag
+            // makes the window floating. A floating window moves at once.
+            if (comptime build_options.bar_enabled) {
+                var outputs = ctx.outputs.safeIterator(.forward);
+                while (outputs.next()) |output| {
+                    const window = output.bar.title_window_at(surface, seat.pointer_surface_x) orelse continue;
+                    const moves_now = !window.managed_by_layout() and !window.maximize;
+                    if (window.fullscreen == .none and (moves_now or ctx.cfg.drag.float_distance != null)) {
+                        seat.decoration_move = .{ .window = window, .from_bar = true };
+                        ctx.manage_dirty(@src());
+                    }
+                    return;
+                }
+            }
+
             var it = ctx.windows.safeIterator(.forward);
             while (it.next()) |window| {
                 if (!window.owns_decoration(surface)) continue;
@@ -1260,7 +1298,7 @@ fn wl_pointer_listener(wl_pointer: *wl.Pointer, event: wl.Pointer.Event, seat: *
                     .title = window.owns_title_bar(surface),
                     .tiled_moves = ctx.cfg.drag.float_distance != null,
                 })) {
-                    seat.decoration_move = window;
+                    seat.decoration_move = .{ .window = window };
                     ctx.manage_dirty(@src());
                 }
                 break;

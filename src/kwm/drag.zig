@@ -96,6 +96,53 @@ pub fn placeholder(slot: Area, origin_x: i32, origin_y: i32, border: i32) Area {
 }
 
 
+pub const Size = struct {
+    width: i32,
+    height: i32,
+};
+
+
+/// The size of a window that a drag of its title in the bar takes out of its
+/// place. A window that was not `full` (maximized, or alone in the layout)
+/// keeps its size `current`. A full window gets the floating size that kwm
+/// remembers, else two thirds of the exclusive area `area`.
+pub fn detach_size(full: bool, current: Size, remembered: ?Size, area: Size) Size {
+    if (!full) return current;
+    if (remembered) |size| return size;
+    return .{
+        .width = @max(1, @divFloor(area.width * 2, 3)),
+        .height = @max(1, @divFloor(area.height * 2, 3)),
+    };
+}
+
+
+/// The place (x, y) of a window of `size` that a drag of its title in the
+/// bar takes out of the layout. The window was at `window_x` with
+/// `window_width` at the press at `press_x`. The pointer, now at
+/// (`pointer_x`, `pointer_y`), keeps its place along the width of the
+/// window, and is `grab` pixels below the top of the title bar.
+/// `title_height` is the height of the title bar above the window: 0 for a
+/// window without a title bar of kwm. All values are in the coordinates of
+/// the exclusive area of the output.
+pub fn detach_place(
+    size: Size,
+    window_x: i32,
+    window_width: i32,
+    press_x: i32,
+    pointer_x: i32,
+    pointer_y: i32,
+    title_height: i32,
+    grab: i32,
+) struct { x: i32, y: i32 } {
+    const along: i64 = std.math.clamp(press_x - window_x, 0, @max(0, window_width - 1));
+    const offset: i64 = if (window_width > 0) @divFloor(along * size.width, window_width) else 0;
+    return .{
+        .x = pointer_x - @as(i32, @intCast(offset)),
+        .y = pointer_y - grab + title_height,
+    };
+}
+
+
 /// The color 0xRRGGBBAA with each color channel multiplied by the alpha
 /// channel: wp_single_pixel_buffer_v1 takes premultiplied values.
 pub fn premultiplied(color: u32) u32 {
@@ -170,4 +217,34 @@ test "premultiplied: the color channels take the alpha" {
     try testing.expectEqual(@as(u32, 0x00000000), premultiplied(0xf2971800));
     // 0xf2 * 0x40 / 0xff = 60.7: 0x3d.
     try testing.expectEqual(@as(u32, 0x3d260640), premultiplied(0xf2971840));
+}
+
+test "detach_size: a full window gets the remembered size, else two thirds of the area" {
+    const full: Size = .{ .width = 1280, .height = 700 };
+    try testing.expectEqual(Size{ .width = 640, .height = 480 }, detach_size(true, full, .{ .width = 640, .height = 480 }, full));
+    try testing.expectEqual(Size{ .width = 853, .height = 466 }, detach_size(true, full, null, full));
+}
+
+test "detach_size: another window keeps its size" {
+    const current: Size = .{ .width = 500, .height = 682 };
+    try testing.expectEqual(current, detach_size(false, current, .{ .width = 640, .height = 480 }, .{ .width = 1280, .height = 700 }));
+}
+
+test "detach_place: the pointer keeps its place along the width, on the title bar" {
+    // A press at the middle of a window of 1280 pixels: the window of 853
+    // pixels has its middle under the pointer. The pointer is 9 pixels
+    // below the top of the title bar of 19 pixels.
+    const middle = detach_place(.{ .width = 853, .height = 466 }, 0, 1280, 640, 700, 100, 19, 9);
+    try testing.expectEqual(@as(i32, 700 - 426), middle.x);
+    try testing.expectEqual(@as(i32, 110), middle.y);
+    // A press at the left end keeps the left end under the pointer.
+    try testing.expectEqual(@as(i32, 300), detach_place(.{ .width = 800, .height = 400 }, 0, 1280, 0, 300, 50, 19, 9).x);
+    // A window without a title bar of kwm: the pointer is 9 pixels below
+    // the top of the window.
+    try testing.expectEqual(@as(i32, 41), detach_place(.{ .width = 800, .height = 400 }, 0, 1280, 0, 300, 50, 0, 9).y);
+}
+
+test "detach_place: a press out of the window counts as its nearest end" {
+    try testing.expectEqual(@as(i32, 300), detach_place(.{ .width = 800, .height = 400 }, 100, 1280, 20, 300, 50, 19, 9).x);
+    try testing.expectEqual(@as(i32, 300 - 799), detach_place(.{ .width = 800, .height = 400 }, 0, 800, 5000, 300, 50, 19, 9).x);
 }
