@@ -144,7 +144,7 @@ tests
     focus = mkCheck "focus" "The keyboard focus of the windows of kwm";
     bar = mkCheck "bar" "A change of the status of the bar needs no manage sequence";
     title-bar = mkCheck "title-bar" "The title bar of a window with server side decorations";
-    gauge = mkCheck "gauge" "The gauge widget draws two bars with one border between them";
+    gauge = mkCheck "gauge" "The gauge widget draws two bars with one border between them, and a column for each core";
     tray = mkCheck "tray" "The collapsed tray shows the symbolic items, the items that need attention, and all items under the pointer";
     drag = mkCheck "drag" "A drag of a window by its title bar makes it floating, and an edge of the output makes it tiled";
     theme = mkCheck "theme" "kwm follows the GTK theme of the settings portal, also for the desktop color";

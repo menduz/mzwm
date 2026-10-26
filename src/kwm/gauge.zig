@@ -3,12 +3,15 @@
 //! reads the values, and bar.zig draws the rectangles of `layout`.
 //! `zig build test` runs the tests below.
 //!
-//! Each bar has the width of a glyph of the bar font and the height of a
-//! tray icon. A border of 1 pixel in the inactive color of the symbolic
-//! icons (the text color at 35% on the background of the bar) goes around
-//! each bar; two bars share the border between them. The inside has the background of the bar, and the value fills it
-//! from the bottom, in the text color at 80%, or in the warning or critical
-//! color.
+//! Each bar has the height of a tray icon. A bar has one or more columns
+//! (the CPU bar has a column for each core). The inside of a bar is a glyph
+//! of the bar font wide, or one pixel for each column if that is wider; the
+//! columns divide the inside between them, without borders. A border of 1
+//! pixel in the inactive color of the symbolic icons (the text color at 35%
+//! on the background of the bar) goes around each bar; two bars share the
+//! border between them. The inside has the background of the bar, and the
+//! value of each column fills it from the bottom, in the text color at 80%,
+//! or in the warning or critical color.
 
 const std = @import("std");
 const testing = std.testing;
@@ -16,7 +19,10 @@ const testing = std.testing;
 /// The most bars in one gauge.
 pub const max_bars = 4;
 
-/// The value of one bar.
+/// The most columns of all the bars of one gauge.
+pub const max_columns = 256;
+
+/// The value of one column.
 pub const Level = struct {
     /// 0 to 100.
     percent: u8,
@@ -27,15 +33,32 @@ pub const Level = struct {
 
 /// The values of a gauge.
 pub const Levels = struct {
-    items: [max_bars]Level = undefined,
-    len: u8 = 0,
+    /// The columns of all the bars, from left to right.
+    columns: [max_columns]Level = undefined,
+    len: u16 = 0,
+    /// The number of columns of each bar.
+    bars: [max_bars]u16 = undefined,
+    bars_len: u8 = 0,
+
+    /// Add a bar with `columns` at the right. Columns after `max_columns`
+    /// are not added. A bar without columns is not added.
+    pub fn add_bar(self: *Levels, columns: []const Level) void {
+        if (self.bars_len == max_bars) return;
+        const n: u16 = @intCast(@min(columns.len, max_columns - self.len));
+        if (n == 0) return;
+        @memcpy(self.columns[self.len..][0..n], columns[0..n]);
+        self.len += n;
+        self.bars[self.bars_len] = n;
+        self.bars_len += 1;
+    }
 
     pub fn slice(self: *const Levels) []const Level {
-        return self.items[0..self.len];
+        return self.columns[0..self.len];
     }
 
     pub fn eql(a: *const Levels, b: *const Levels) bool {
-        if (a.len != b.len) return false;
+        if (a.len != b.len or a.bars_len != b.bars_len) return false;
+        if (!std.mem.eql(u16, a.bars[0..a.bars_len], b.bars[0..b.bars_len])) return false;
         for (a.slice(), b.slice()) |x, y| {
             if (!std.meta.eql(x, y)) return false;
         }
@@ -50,10 +73,19 @@ pub const Rect = struct {
     height: i32,
 };
 
-/// The width of a gauge with `bars` bars of `bar_width` pixels inside.
-pub fn width(bars: usize, bar_width: i32) i32 {
-    const n: i32 = @intCast(bars);
-    return if (n == 0) 0 else n * bar_width + n + 1;
+/// The width of the inside of a bar with `columns` columns: `bar_width`,
+/// or one pixel for each column if that is wider.
+pub fn inside_width(columns: u16, bar_width: i32) i32 {
+    return @max(bar_width, @as(i32, columns));
+}
+
+/// The width of a gauge whose bars have `bar_width` pixels inside or
+/// more. Refer to `inside_width`.
+pub fn width(levels: *const Levels, bar_width: i32) i32 {
+    if (levels.bars_len == 0) return 0;
+    var result: i32 = 1;
+    for (levels.bars[0..levels.bars_len]) |columns| result += inside_width(columns, bar_width) + 1;
+    return result;
 }
 
 /// The height of the fill of a bar with `inside` pixels inside: 0 at 0%,
@@ -64,24 +96,34 @@ pub fn fill_height(percent: u8, inside: i32) i32 {
 }
 
 /// The rectangles of a gauge at (`x`, `y`) with a total height of
-/// `height`: first the outer box (the border color), then for each bar its
-/// inside (the background) and its fill.
-pub fn layout(levels: []const Level, x: i32, y: i32, bar_width: i32, height: i32) struct {
+/// `height`: first the outer box (the border color), then the inside of
+/// each bar (the background), and the fill of each column.
+pub fn layout(levels: *const Levels, x: i32, y: i32, bar_width: i32, height: i32) struct {
     box: Rect,
     insides: [max_bars]Rect,
-    fills: [max_bars]Rect,
+    fills: [max_columns]Rect,
 } {
     var result: @TypeOf(layout(levels, x, y, bar_width, height)) = .{
-        .box = .{ .x = x, .y = y, .width = width(levels.len, bar_width), .height = height },
+        .box = .{ .x = x, .y = y, .width = width(levels, bar_width), .height = height },
         .insides = undefined,
         .fills = undefined,
     };
     const inside = @max(0, height - 2);
-    for (levels, 0..) |level, i| {
-        const left = x + 1 + @as(i32, @intCast(i)) * (bar_width + 1);
-        result.insides[i] = .{ .x = left, .y = y + 1, .width = bar_width, .height = inside };
-        const filled = fill_height(level.percent, inside);
-        result.fills[i] = .{ .x = left, .y = y + 1 + inside - filled, .width = bar_width, .height = filled };
+    var left = x + 1;
+    var column: usize = 0;
+    for (levels.bars[0..levels.bars_len], 0..) |columns, i| {
+        const w = inside_width(columns, bar_width);
+        result.insides[i] = .{ .x = left, .y = y + 1, .width = w, .height = inside };
+        // Column j has the pixels from j * w / n to (j + 1) * w / n.
+        const n: i32 = columns;
+        for (0..columns) |j| {
+            const a = @divFloor(@as(i32, @intCast(j)) * w, n);
+            const b = @divFloor(@as(i32, @intCast(j + 1)) * w, n);
+            const filled = fill_height(levels.columns[column].percent, inside);
+            result.fills[column] = .{ .x = left + a, .y = y + 1 + inside - filled, .width = b - a, .height = filled };
+            column += 1;
+        }
+        left += w + 1;
     }
     return result;
 }
@@ -116,11 +158,26 @@ pub fn fill_color(fg: u32, level: Level) u32 {
 }
 
 
+fn test_levels(bars: []const []const Level) Levels {
+    var levels: Levels = .{};
+    for (bars) |columns| levels.add_bar(columns);
+    return levels;
+}
+
 test "width: the bars and one border more than bars" {
-    try testing.expectEqual(@as(i32, 0), width(0, 6));
-    try testing.expectEqual(@as(i32, 8), width(1, 6));
+    try testing.expectEqual(@as(i32, 0), width(&test_levels(&.{}), 6));
+    try testing.expectEqual(@as(i32, 8), width(&test_levels(&.{&.{.{ .percent = 0 }}}), 6));
     // Two bars of 6 pixels share the border between them: 1 + 6 + 1 + 6 + 1.
-    try testing.expectEqual(@as(i32, 15), width(2, 6));
+    const one: []const Level = &.{.{ .percent = 0 }};
+    try testing.expectEqual(@as(i32, 15), width(&test_levels(&.{ one, one }), 6));
+}
+
+test "width: a bar with more columns than the glyph width has a pixel for each column" {
+    const one: []const Level = &.{.{ .percent = 0 }};
+    const cores: []const Level = &(.{Level{ .percent = 0 }} ** 16);
+    try testing.expectEqual(@as(i32, 1 + 6 + 1 + 16 + 1), width(&test_levels(&.{ one, cores }), 6));
+    // Fewer columns than the glyph width: the bar stays a glyph wide.
+    try testing.expectEqual(@as(i32, 1 + 6 + 1 + 6 + 1), width(&test_levels(&.{ one, cores[0..4] }), 6));
 }
 
 test "fill_height: rounded, from empty to full" {
@@ -133,13 +190,39 @@ test "fill_height: rounded, from empty to full" {
 }
 
 test "layout: the insides share the borders, the fills start at the bottom" {
-    const levels = [_]Level{ .{ .percent = 50 }, .{ .percent = 100 } };
+    const levels = test_levels(&.{ &.{.{ .percent = 50 }}, &.{.{ .percent = 100 }} });
     const l = layout(&levels, 100, 2, 6, 16);
     try testing.expectEqual(Rect{ .x = 100, .y = 2, .width = 15, .height = 16 }, l.box);
     try testing.expectEqual(Rect{ .x = 101, .y = 3, .width = 6, .height = 14 }, l.insides[0]);
     try testing.expectEqual(Rect{ .x = 108, .y = 3, .width = 6, .height = 14 }, l.insides[1]);
     try testing.expectEqual(Rect{ .x = 101, .y = 10, .width = 6, .height = 7 }, l.fills[0]);
     try testing.expectEqual(Rect{ .x = 108, .y = 3, .width = 6, .height = 14 }, l.fills[1]);
+}
+
+test "layout: a column of one pixel for each core, without borders" {
+    var cores: [8]Level = undefined;
+    for (&cores, 0..) |*c, i| c.* = .{ .percent = @intCast(i * 10) };
+    const levels = test_levels(&.{ &.{.{ .percent = 50 }}, &cores });
+    const l = layout(&levels, 100, 2, 6, 16);
+    try testing.expectEqual(@as(i32, 1 + 6 + 1 + 8 + 1), l.box.width);
+    try testing.expectEqual(Rect{ .x = 108, .y = 3, .width = 8, .height = 14 }, l.insides[1]);
+    for (0..8) |i| {
+        const filled = fill_height(cores[i].percent, 14);
+        try testing.expectEqual(Rect{ .x = 108 + @as(i32, @intCast(i)), .y = 3 + 14 - filled, .width = 1, .height = filled }, l.fills[1 + i]);
+    }
+}
+
+test "layout: fewer columns than the glyph width divide the inside" {
+    const levels = test_levels(&.{&.{ .{ .percent = 100 }, .{ .percent = 100 }, .{ .percent = 100 }, .{ .percent = 100 } }});
+    const l = layout(&levels, 0, 0, 6, 16);
+    // 6 pixels for 4 columns: 1, 2, 1, 2 pixels, side by side.
+    try testing.expectEqual(@as(i32, 6), l.insides[0].width);
+    const xs = [_]i32{ 1, 2, 4, 5 };
+    const ws = [_]i32{ 1, 2, 1, 2 };
+    for (0..4) |i| {
+        try testing.expectEqual(xs[i], l.fills[i].x);
+        try testing.expectEqual(ws[i], l.fills[i].width);
+    }
 }
 
 test "fill_color: the text color at 80%, else the color of the level" {
@@ -161,12 +244,30 @@ test "Levels.eql: the same values" {
     var a: Levels = .{};
     var b: Levels = .{};
     try testing.expect(a.eql(&b));
-    a.items[0] = .{ .percent = 3 };
-    a.len = 1;
+    a.add_bar(&.{.{ .percent = 3 }});
     try testing.expect(!a.eql(&b));
-    b.items[0] = .{ .percent = 3 };
-    b.len = 1;
+    b.add_bar(&.{.{ .percent = 3 }});
     try testing.expect(a.eql(&b));
-    b.items[0].color = 0xff0000ff;
+    b.columns[0].color = 0xff0000ff;
     try testing.expect(!a.eql(&b));
+}
+
+test "Levels.eql: the same columns in other bars" {
+    var a: Levels = .{};
+    var b: Levels = .{};
+    a.add_bar(&.{ .{ .percent = 1 }, .{ .percent = 2 } });
+    b.add_bar(&.{.{ .percent = 1 }});
+    b.add_bar(&.{.{ .percent = 2 }});
+    try testing.expect(!a.eql(&b));
+}
+
+test "Levels.add_bar: at most max_columns columns" {
+    var levels: Levels = .{};
+    const many: []const Level = &(.{Level{ .percent = 0 }} ** 200);
+    levels.add_bar(many);
+    levels.add_bar(many);
+    levels.add_bar(many);
+    try testing.expectEqual(@as(u16, max_columns), levels.len);
+    try testing.expectEqual(@as(u8, 2), levels.bars_len);
+    try testing.expectEqual(@as(u16, max_columns - 200), levels.bars[1]);
 }

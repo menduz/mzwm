@@ -1137,7 +1137,7 @@ fn rasterize_widgets(self: *Self, side: widgets.Side, fg: pixman.Color) !WidgetR
     var glyph: ?i32 = null;
     for (0.., widgets.states(side)) |index, state| {
         if (state.hidden) continue;
-        if (state.gauge.len > 0) {
+        if (state.gauge.bars_len > 0) {
             const bar_width = glyph orelse self.glyph_width();
             glyph = bar_width;
             const g: GaugeDraw = .{
@@ -1148,7 +1148,7 @@ fn rasterize_widgets(self: *Self, side: widgets.Side, fg: pixman.Color) !WidgetR
                 .bg = theme.bar_scheme(.status).normal.bg,
             };
             if (row.texts.items.len > 0) row.width += row.gap;
-            const text: StatusText = .{ .width = @intCast(gauge.width(state.gauge.len, bar_width)) };
+            const text: StatusText = .{ .width = @intCast(gauge.width(&state.gauge, bar_width)) };
             row.width += text.width;
             try row.texts.append(ctx.gpa, .{ .index = index, .text = text, .gauge = g });
             continue;
@@ -1221,13 +1221,12 @@ fn glyph_width(self: *Self) i32 {
 
 /// Draw a gauge at `x`, with its top at `y`: the border in the inactive
 /// color of the symbolic icons, the inside of each bar in `bg`, and the
-/// fills. Refer to gauge.zig.
+/// fill of each column. Refer to gauge.zig.
 fn draw_gauge(buffer: *render_.Buffer, g: *const GaugeDraw, x: i32, y: i32, bg: *const pixman.Color) void {
-    const levels = g.levels.slice();
-    const l = gauge.layout(levels, x, y, g.bar_width, g.height);
+    const l = gauge.layout(&g.levels, x, y, g.bar_width, g.height);
     fill_rect(buffer, l.box, &render_.utils.color(gauge.border_color(g.fg, g.bg)));
-    for (levels, 0..) |level, i| {
-        fill_rect(buffer, l.insides[i], bg);
+    for (l.insides[0..g.levels.bars_len]) |inside| fill_rect(buffer, inside, bg);
+    for (g.levels.slice(), 0..) |level, i| {
         if (l.fills[i].height > 0) fill_rect(buffer, l.fills[i], &render_.utils.color(gauge.fill_color(g.fg, level)));
     }
 }

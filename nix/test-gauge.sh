@@ -1,5 +1,6 @@
 # Tests the gauge widget: two vertical bars (memory and CPU) at the right end
-# of the bar. Run it with the environment of `kwm-test-gauge` in tests.nix.
+# of the bar. The CPU bar has a column of one pixel for each core, or more
+# if there are fewer cores than the pixels of a glyph. Run it with the environment of `kwm-test-gauge` in tests.nix.
 # Refer to src/kwm/gauge.zig.
 #
 # The bar of config.def.zon has the text color #a1a1a1, the tray icons of 16
@@ -24,8 +25,8 @@ source "$TEST_LIB"
 
 # gauge <png>: the shape of the gauge at the right end of the bar, as
 # "x0 x1 x2 top" (the three border columns and the top row), or "none".
-# Then a line for each bar: "ok" when its inside has the background above
-# and the fill below.
+# Then a line for each bar: "ok" when each column of its inside has the
+# background above and the fill below.
 shape() {
   python3 - "$1" <<'PY'
 import sys
@@ -35,13 +36,16 @@ pixels = image.load()
 width = image.size[0]
 fg, bg = (0x41, 0x45, 0x49), (0x0e, 0x14, 0x19)
 fills = {(0x81, 0x81, 0x81), (0xff, 0xb3, 0x54), (0xff, 0x33, 0x33)}
-# A border column: 16 pixels of the border color, from the top row.
+# A border column: 16 pixels of the border color, from the top row. The
+# three border columns that are nearest to the right end.
 columns = []
-for x in range(width - 60, width):
+for x in range(width - 1, max(0, width - 400), -1):
     for top in range(0, 8):
         if all(pixels[x, top + dy] == fg for dy in range(16)) and pixels[x, top + 16] != fg:
-            columns.append((x, top))
+            columns.insert(0, (x, top))
             break
+    if len(columns) == 3:
+        break
 if len(columns) != 3 or len({t for _, t in columns}) != 1:
     print("none", columns)
     sys.exit()
@@ -76,17 +80,20 @@ read -r x0 x1 x2 top <<<"$(head -1 <<<"$result")"
 if [ -n "${TEST_SCREENSHOT_DIR:-}" ]; then
   cp "$work/bar.png" "$TEST_SCREENSHOT_DIR/gauge.png"
 fi
-if [ "$x0" != none ] && [ $((x1 - x0)) = $((x2 - x1)) ] && [ $((x1 - x0)) -gt 2 ]; then
-  echo "ok: the gauge has two bars of the same width, with one border between them ($x0 $x1 $x2)"
+# Terminus at 9 points has glyphs of 6 pixels. The CPU bar has a pixel for
+# each core of /proc/stat (as kwm reads them), but not fewer than 6.
+cores=$(grep -c '^cpu[0-9]' /proc/stat)
+cpu_width=$((cores > 6 ? cores : 6))
+if [ "$x0" != none ] && [ $((x1 - x0 - 1)) = 6 ]; then
+  echo "ok: the memory bar is a glyph wide"
 else
-  echo "FAIL: the gauge has two bars of the same width, with one border between them ($result)"
+  echo "FAIL: the memory bar is a glyph wide (inside: $((x1 - x0 - 1)))"
   failed=1
 fi
-# Terminus at 9 points has glyphs of 6 pixels: two bars of 6 pixels inside.
-if [ "$x0" != none ] && [ $((x1 - x0 - 1)) = 6 ]; then
-  echo "ok: each bar is a glyph wide"
+if [ "$x0" != none ] && [ $((x2 - x1 - 1)) = "$cpu_width" ]; then
+  echo "ok: the CPU bar has a column for each of the $cores cores, and is a glyph wide or more"
 else
-  echo "FAIL: each bar is a glyph wide (inside: $((x1 - x0 - 1)))"
+  echo "FAIL: the CPU bar has a column for each of the $cores cores, and is a glyph wide or more (inside: $((x2 - x1 - 1)), expected $cpu_width)"
   failed=1
 fi
 if [ "$(sed -n 2,3p <<<"$result" | tr '\n' ' ')" = "ok ok " ]; then

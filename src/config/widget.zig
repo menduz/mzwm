@@ -19,8 +19,9 @@ pub const Meter = clickable(struct {
 });
 
 /// Vertical bars side by side, one for each value, as high as a tray icon,
-/// with a border in the inactive color of the symbolic icons. The tooltip
-/// has a line for each bar. Refer to src/kwm/gauge.zig.
+/// with a border in the inactive color of the symbolic icons. The CPU bar
+/// has a column for each core, without borders: one pixel each, or more
+/// if the bar is wider. The tooltip has a line for each bar. Refer to src/kwm/gauge.zig.
 pub const Gauge = clickable(struct {
     /// The values of the bars, from left to right. At most 4.
     bars: []const enum { memory, cpu } = &.{ .memory, .cpu },

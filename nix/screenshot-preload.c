@@ -1,8 +1,10 @@
 // Fixed values for the widgets of the kwm bar in the screenshots. The
 // screenshot script loads this library into kwm with LD_PRELOAD.
 //
-//   - /proc/stat: the CPU counters grow 25 busy and 75 idle on each read. Thus
-//     the CPU meter shows 25% at each update, at each speed of the build.
+//   - /proc/stat: 16 cores. On each read, the counters of each core grow
+//     with its fixed use in `core_use` (busy) and the rest to 100 (idle).
+//     Thus each core shows the same use at each update, at each speed of
+//     the build. The "cpu" line is the sum of the cores: 25%.
 //   - /proc/meminfo: 40% of 16 GiB is used.
 //   - statvfs("/"): 200 GB of 500 GB are free.
 //   - /sys/class/power_supply: no battery.
@@ -23,6 +25,13 @@
 
 static unsigned long cpu_reads;
 
+// The use of each core in percent: low, medium, warning (70) and critical
+// (90) values. The sum is 400 of 1600: 25%.
+static const unsigned core_use[] = {
+    10, 25, 40, 15, 5, 30, 75, 20, 5, 45, 95, 10, 5, 0, 15, 5,
+};
+#define CORES (sizeof core_use / sizeof core_use[0])
+
 // A file in memory that holds `text`, open for reading at its start.
 static int memory_file(const char *text) {
     int fd = memfd_create("kwm-screenshot", MFD_CLOEXEC);
@@ -41,10 +50,18 @@ static int memory_file(const char *text) {
 static int fixed_file(const char *path) {
     if (strcmp(path, "/proc/stat") == 0) {
         cpu_reads++;
-        char text[256];
-        snprintf(text, sizeof text,
-                 "cpu  %lu 0 0 %lu 0 0 0 0 0 0\n",
-                 cpu_reads * 25, cpu_reads * 75);
+        unsigned long busy = 0;
+        for (size_t i = 0; i < CORES; i++) busy += core_use[i];
+        char text[2048];
+        int len = snprintf(text, sizeof text,
+                           "cpu  %lu 0 0 %lu 0 0 0 0 0 0\n",
+                           cpu_reads * busy, cpu_reads * (100 * CORES - busy));
+        for (size_t i = 0; i < CORES; i++) {
+            len += snprintf(text + len, sizeof text - len,
+                            "cpu%zu %lu 0 0 %lu 0 0 0 0 0 0\n", i,
+                            cpu_reads * core_use[i],
+                            cpu_reads * (100 - core_use[i]));
+        }
         return memory_file(text);
     }
     if (strcmp(path, "/proc/meminfo") == 0) {
