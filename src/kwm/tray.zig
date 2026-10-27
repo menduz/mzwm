@@ -137,18 +137,18 @@ pub const Item = struct {
         self.image_source = null;
     }
 
-    /// The icon of the item for a square of `size` physical pixels: the
-    /// icon name in the icon theme, else the pixmap. With the status
-    /// NeedsAttention, the attention icon comes first. A symbolic icon has
-    /// the color `color` (0xRRGGBBAA).
-    pub fn icon(self: *Item, size: i32, color: u32) ?Icon {
+    /// The icon of the item for a square of `size` physical pixels, or of
+    /// `symbolic_size` for a symbolic icon: the icon name in the icon theme,
+    /// else the pixmap. With the status NeedsAttention, the attention icon
+    /// comes first. A symbolic icon has the color `color` (0xRRGGBBAA).
+    pub fn icon(self: *Item, size: i32, symbolic_size: i32, color: u32) ?Icon {
         const props = &self.props;
         const attention = props.status == .needs_attention;
         if (attention and props.attention_icon_name.len > 0) {
-            if (icons.get(props.attention_icon_name, props.icon_theme_path, size, color)) |image| return image;
+            if (icons.get(props.attention_icon_name, props.icon_theme_path, size, symbolic_size, color)) |image| return image;
         }
         if (!attention or props.attention_icon_pixmap.len == 0) {
-            if (icons.get(props.icon_name, props.icon_theme_path, size, color)) |image| return image;
+            if (icons.get(props.icon_name, props.icon_theme_path, size, symbolic_size, color)) |image| return image;
         }
         const image = self.pixmap_image(size) orelse return null;
         return .{ .image = image, .symbolic = false };
@@ -357,19 +357,19 @@ pub fn hovered(bar: *const anyopaque) bool {
 /// without the passive items. With `collapse`, only the items with a
 /// symbolic icon and the items that need attention, unless `expanded`;
 /// without such items, the last item (refer to tray_collapse.zig). The
-/// icons are for a square of `size`, with the color `color` (refer to
-/// `Item.icon`). The order does not change with the order of registration:
-/// with `collapse`, first the items that the collapsed tray hides; then the
-/// items without a symbolic icon, then the items with a symbolic icon. In
-/// each group, the order is by the name of the executable.
-pub fn visible_items(buffer: []Shown, size: i32, color: u32, expanded: bool) []Shown {
+/// icons are for a square of `size`, or of `symbolic_size`, with the color
+/// `color` (refer to `Item.icon`). The order does not change with the order
+/// of registration: with `collapse`, first the items that the collapsed tray
+/// hides; then the items without a symbolic icon, then the items with a
+/// symbolic icon. In each group, the order is by the name of the executable.
+pub fn visible_items(buffer: []Shown, size: i32, symbolic_size: i32, color: u32, expanded: bool) []Shown {
     const cfg = ctx.cfg.bar.tray orelse return buffer[0..0];
     var n: usize = 0;
     var kept: usize = 0;
     for (items.items) |item| {
         if (!item.ready or n == buffer.len) continue;
         if (item.props.status == .passive and !cfg.show_passive) continue;
-        buffer[n] = .{ .item = item, .icon = item.icon(size, color) };
+        buffer[n] = .{ .item = item, .icon = item.icon(size, symbolic_size, color) };
         if (stays(buffer[n])) kept += 1;
         n += 1;
     }

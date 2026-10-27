@@ -83,24 +83,26 @@ pub const Icon = struct {
     symbolic: bool,
 };
 
-/// The icons by "size/color/theme_path/name". null: no icon with this name.
+/// The icons by "size/symbolic_size/color/theme_path/name". null: no icon
+/// with this name.
 var images: std.StringHashMapUnmanaged(?Icon) = .empty;
 
 const max_images = 256;
 
 
-/// The icon with this name for a square of `size` physical pixels. The
-/// image can be larger or smaller than `size`. `theme_path` is the
-/// IconThemePath of the item, or "". A symbolic icon has the color `color`
-/// (0xRRGGBBAA). The cache keeps the image.
-pub fn get(name: []const u8, theme_path: []const u8, size: i32, color: u32) ?Icon {
-    if (name.len == 0 or size <= 0) return null;
+/// The icon with this name for a square of `size` physical pixels, or of
+/// `symbolic_size` for a symbolic icon. The image can be larger or smaller
+/// than the square. `theme_path` is the IconThemePath of the item, or "". A
+/// symbolic icon has the color `color` (0xRRGGBBAA). The cache keeps the
+/// image.
+pub fn get(name: []const u8, theme_path: []const u8, size: i32, symbolic_size: i32, color: u32) ?Icon {
+    if (name.len == 0 or size <= 0 or symbolic_size <= 0) return null;
 
     var key_buffer: [1024]u8 = undefined;
-    const key = std.fmt.bufPrint(&key_buffer, "{}/{x:0>8}/{s}/{s}", .{ size, color, theme_path, name }) catch return null;
+    const key = std.fmt.bufPrint(&key_buffer, "{}/{}/{x:0>8}/{s}/{s}", .{ size, symbolic_size, color, theme_path, name }) catch return null;
     if (images.get(key)) |icon| return icon;
 
-    const icon = find(name, theme_path, size, color);
+    const icon = find(name, theme_path, size, symbolic_size, color);
     if (images.count() >= max_images) clear_images();
     const owned_key = ctx.gpa.dupe(u8, key) catch return icon;
     images.put(ctx.gpa, owned_key, icon) catch {
@@ -143,13 +145,13 @@ fn allocator() mem.Allocator {
 
 
 /// Find the file of the icon, and read it.
-fn find(name: []const u8, theme_path: []const u8, size: i32, color: u32) ?Icon {
+fn find(name: []const u8, theme_path: []const u8, size: i32, symbolic_size: i32, color: u32) ?Icon {
     const theme_name = if (ctx.cfg.bar.tray) |cfg| cfg.icon_theme else "hicolor";
     var path_buffer: [max_path]u8 = undefined;
     var symbolic_buffer: [256]u8 = undefined;
 
     // An absolute path is a file.
-    if (mem.startsWith(u8, name, "/")) return load(name, name, size, color);
+    if (mem.startsWith(u8, name, "/")) return load(name, name, size, symbolic_size, color);
 
     const base = if (mem.endsWith(u8, name, symbolic_suffix)) name[0 .. name.len - symbolic_suffix.len] else name;
 
@@ -163,8 +165,8 @@ fn find(name: []const u8, theme_path: []const u8, size: i32, color: u32) ?Icon {
     var variant = base;
     while (true) {
         if (std.fmt.bufPrint(&symbolic_buffer, "{s}" ++ symbolic_suffix, .{ variant })) |symbolic| {
-            if (find_file(&path_buffer, symbolic, theme_path, theme_name, size)) |path| {
-                return load(name, path, size, color);
+            if (find_file(&path_buffer, symbolic, theme_path, theme_name, symbolic_size)) |path| {
+                return load(name, path, size, symbolic_size, color);
             }
         } else |_| {}
         variant = shorter(variant) orelse break;
@@ -174,7 +176,7 @@ fn find(name: []const u8, theme_path: []const u8, size: i32, color: u32) ?Icon {
     variant = base;
     while (true) {
         if (find_file(&path_buffer, variant, theme_path, "hicolor", size)) |path| {
-            return load(name, path, size, color);
+            return load(name, path, size, symbolic_size, color);
         }
         variant = shorter(variant) orelse break;
     }
@@ -193,14 +195,16 @@ fn shorter(name: []const u8) ?[]const u8 {
 const symbolic_suffix = "-symbolic";
 
 
-/// Read the file of the icon `name`. A symbolic file gets the color `color`.
-fn load(name: []const u8, path: []const u8, size: i32, color: u32) ?Icon {
+/// Read the file of the icon `name`, at `size`, or at `symbolic_size` for a
+/// symbolic file. A symbolic file gets the color `color`.
+fn load(name: []const u8, path: []const u8, size: i32, symbolic_size: i32, color: u32) ?Icon {
     var real_buffer: [max_path]u8 = undefined;
     const real = real_path(path, &real_buffer) orelse path;
-    log.debug("{s} ({}): {s}", .{ name, size, real });
-    const image = read(path, size) orelse return null;
     const file_name = real[if (mem.lastIndexOfScalar(u8, real, '/')) |i| i + 1 else 0 ..];
     const symbolic = mem.indexOf(u8, file_name, symbolic_suffix) != null;
+    const read_size = if (symbolic) symbolic_size else size;
+    log.debug("{s} ({}): {s}", .{ name, read_size, real });
+    const image = read(path, read_size) orelse return null;
     if (symbolic) recolor(image, color);
     return .{ .image = image, .symbolic = symbolic };
 }

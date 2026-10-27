@@ -32,6 +32,7 @@ const ShellSurface = @import("shell_surface.zig");
 const widgets = @import("widgets.zig");
 const tooltip = @import("tooltip.zig");
 const tray = @import("tray.zig");
+const tray_icon = @import("tray_icon.zig");
 const gauge = @import("gauge.zig");
 
 const ctx = Context.get();
@@ -824,8 +825,9 @@ fn render_dynamic_component(self: *Self) void {
         const cfg = ctx.cfg.bar.tray orelse break :draw_tray;
         const bar_h: i32 = h;
         const size = self.icon_size();
+        const symbolic_size = tray_icon.symbolic_size(size, self.scale);
         var item_buffer: [max_tray_items]tray.Shown = undefined;
-        const shown = tray.visible_items(&item_buffer, size, status_scheme.fg, tray.hovered(self));
+        const shown = tray.visible_items(&item_buffer, size, symbolic_size, status_scheme.fg, tray.hovered(self));
         if (shown.len == 0) break :draw_tray;
 
         const gap: i32 = utils.logical2physics(i32, @intCast(cfg.spacing), self.scale);
@@ -841,7 +843,7 @@ fn render_dynamic_component(self: *Self) void {
         var item_x: i32 = @as(i32, tray_x) + @divFloor(pad, 2);
         const item_y: i32 = @divFloor(bar_h - size, 2);
         for (shown) |s| {
-            self.draw_tray_item(buffer, s, item_x, item_y, size, &status_fg);
+            self.draw_tray_item(buffer, s, item_x, item_y, size, symbolic_size, &status_fg);
             self.tray_rects.appendBounded(.{
                 .item = s.item,
                 .x0 = item_x - @divFloor(gap, 2),
@@ -1028,7 +1030,8 @@ fn draw_title(self: *Self, buffer: *render_.Buffer, start: i16, end: i16) void {
 
 
 /// Draw a tray item in the square of `size` at (`x`, `y`): its icon, or the
-/// first letter of its name. `fg` is the color of the text.
+/// first letter of its name. A symbolic icon is `symbolic_size`, in the
+/// middle of the square. `fg` is the color of the text.
 fn draw_tray_item(
     self: *Self,
     buffer: *render_.Buffer,
@@ -1036,10 +1039,13 @@ fn draw_tray_item(
     x: i32,
     y: i32,
     size: i32,
+    symbolic_size: i32,
     fg: *const pixman.Color,
 ) void {
     if (shown.icon) |icon| {
-        draw_image(buffer, icon.image, x, y, size);
+        const side = if (icon.symbolic) symbolic_size else size;
+        const offset = tray_icon.offset(size, side);
+        draw_image(buffer, icon.image, x + offset, y + offset, side);
         return;
     }
     const utf32 = render_.utils.to_utf8(ctx.gpa, shown.item.letter()) catch return;

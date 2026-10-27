@@ -67,6 +67,28 @@ print("none")
 PY
 }
 
+# box <png> <rrggbb> <x>: "<width> <height> <2 * middle y>" of the pixels of
+# the color from 4 pixels before <x> to 20 pixels after it, or "none". The
+# text can have the color of a symbolic icon: it is not in this area.
+box() {
+  python3 - "$1" "$2" "$3" <<'PY'
+import sys
+from PIL import Image
+image = Image.open(sys.argv[1]).convert("RGB")
+color = tuple(int(sys.argv[2][i:i + 2], 16) for i in (0, 2, 4))
+start = int(sys.argv[3])
+pixels = image.load()
+width, height = image.size
+points = [(x, y) for x in range(max(0, start - 4), min(width, start + 20)) for y in range(min(height, 40)) if pixels[x, y] == color]
+if not points:
+    print("none")
+    sys.exit()
+xs = [p[0] for p in points]
+ys = [p[1] for p in points]
+print(max(xs) - min(xs) + 1, max(ys) - min(ys) + 1, min(ys) + max(ys) + 1)
+PY
+}
+
 # expect_tray <description> <symbolic> <red> <green>: each value is "yes" or
 # "no": the bar shows that square, within 5 seconds.
 expect_tray() {
@@ -89,7 +111,8 @@ expect_tray() {
 }
 
 # expect_one <description>: the bar shows exactly one of the two colored
-# squares, at the place of the symbolic item, within 5 seconds.
+# squares, at the place of the symbolic item, within 5 seconds. A regular
+# icon is 1 pixel larger on each side than the symbolic icon.
 # shown_color is "red" or "green".
 expect_one() {
   local r g
@@ -97,11 +120,11 @@ expect_one() {
     grim "$work/bar.png"
     r=$(square "$work/bar.png" ff0000)
     g=$(square "$work/bar.png" 00ff00)
-    if [ "$r" = "$symbolic_x" ] && [ "$g" = none ]; then shown_color=red; echo "ok: $1"; return; fi
-    if [ "$g" = "$symbolic_x" ] && [ "$r" = none ]; then shown_color=green; echo "ok: $1"; return; fi
+    if [ "$r" = "$((symbolic_x - 1))" ] && [ "$g" = none ]; then shown_color=red; echo "ok: $1"; return; fi
+    if [ "$g" = "$((symbolic_x - 1))" ] && [ "$r" = none ]; then shown_color=green; echo "ok: $1"; return; fi
     sleep 0.2
   done
-  echo "FAIL: $1 (red at $r, green at $g, not one of them at $symbolic_x)"
+  echo "FAIL: $1 (red at $r, green at $g, not one of them at $((symbolic_x - 1)))"
   shown_color=none
   failed=1
 }
@@ -117,6 +140,19 @@ if [ "$(square "$work/bar.png" a1a1a1)" = "$symbolic_x" ]; then
   echo "ok: the symbolic item stays under the pointer"
 else
   echo "FAIL: the symbolic item stays under the pointer (at $(square "$work/bar.png" a1a1a1), not $symbolic_x)"
+  failed=1
+fi
+
+# A regular icon is 16 pixels and a symbolic icon is 14 pixels (scale 1),
+# on the same middle line.
+symbolic_box=$(box "$work/bar.png" a1a1a1 "$symbolic_x")
+red_box=$(box "$work/bar.png" ff0000 "$(square "$work/bar.png" ff0000)")
+read -r _ _ symbolic_middle <<<"$symbolic_box"
+read -r _ _ red_middle <<<"$red_box"
+if [ "${symbolic_box% *}" = "14 14" ] && [ "${red_box% *}" = "16 16" ] && [ "$symbolic_middle" = "$red_middle" ]; then
+  echo "ok: the symbolic icon is 2 pixels smaller, on the same middle line"
+else
+  echo "FAIL: the symbolic icon is 2 pixels smaller, on the same middle line (symbolic: $symbolic_box, regular: $red_box)"
   failed=1
 fi
 
