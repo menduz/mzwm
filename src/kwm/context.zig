@@ -15,6 +15,7 @@ const wayland = @import("wayland");
 const wl = wayland.client.wl;
 const wp = wayland.client.wp;
 const river = wayland.client.river;
+const zwlr = wayland.client.zwlr;
 
 const posix = @import("posix");
 const config = @import("config");
@@ -62,6 +63,9 @@ wp_single_pixel_buffer_manager: *wp.SinglePixelBufferManagerV1,
 rwm: *river.WindowManagerV1,
 rwm_xkb_bindings: *river.XkbBindingsV1,
 rwm_layer_shell: *river.LayerShellV1,
+/// null: the compositor has no wlr-layer-shell. Then the tooltip is a shell
+/// surface.
+zwlr_layer_shell: ?*zwlr.LayerShellV1,
 rwm_inputs: if (build_options.kwim_enabled) types.RiverInputs else void = if (build_options.kwim_enabled) .{} else {},
 
 // seperate layer between floating and nonfloating
@@ -125,6 +129,7 @@ pub fn init(
     rwm: *river.WindowManagerV1,
     rwm_xkb_bindings: *river.XkbBindingsV1,
     rwm_layer_shell: *river.LayerShellV1,
+    zwlr_layer_shell: ?*zwlr.LayerShellV1,
     rwm_inputs: types.RiverInputs,
 ) !void {
     // initialize once
@@ -152,6 +157,7 @@ pub fn init(
         .rwm = rwm,
         .rwm_xkb_bindings = rwm_xkb_bindings,
         .rwm_layer_shell = rwm_layer_shell,
+        .zwlr_layer_shell = zwlr_layer_shell,
         .key_repeat = undefined,
         .terminal_windows = .init(gpa),
         .output_states = .init(gpa),
@@ -240,6 +246,7 @@ pub fn deinit() void {
     ctx.rwm.destroy();
     ctx.rwm_xkb_bindings.destroy();
     ctx.rwm_layer_shell.destroy();
+    if (ctx.zwlr_layer_shell) |zwlr_layer_shell| zwlr_layer_shell.destroy();
     @import("drop_preview.zig").deinit();
     ctx.layer_marker.deinit();
     ctx.wl_surface.destroy();

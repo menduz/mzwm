@@ -2,9 +2,15 @@
 //! There is one tooltip for all outputs.
 //!
 //! The pointer events of the bar select the target widget. After
-//! `bar.tooltip_delay` milliseconds, the next render sequence makes a shell
-//! surface below the widget. Shell surfaces change only in a manage or render
+//! `bar.tooltip_delay` milliseconds, the next render sequence makes a surface
+//! below the widget. Shell surfaces change only in a manage or render
 //! sequence, so `render` makes all changes.
+//!
+//! The surface is a layer surface on the overlay layer: river puts shell
+//! surfaces below the top and overlay layers, and then the notifications
+//! (dunst) and the menus (rofi) cover the tooltip. A new layer surface is
+//! above the other layer surfaces, and each tooltip is a new surface. Without
+//! wlr-layer-shell, the surface is a shell surface.
 //!
 //! A script widget can give a click command for each line of its tooltip.
 //! Then the tooltip is below the pointer, and stays `leave_delay`
@@ -19,6 +25,7 @@ const log = std.log.scoped(.tooltip);
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
 const wp = wayland.client.wp;
+const zwlr = wayland.client.zwlr;
 const pixman = @import("pixman");
 const fcft = @import("fcft");
 
@@ -62,11 +69,21 @@ pub const Target = struct {
 
 const Surface = struct {
     wl_surface: *wl.Surface,
-    shell_surface: ShellSurface,
+    role: union(enum) {
+        layer: struct {
+            zwlr_layer_surface: *zwlr.LayerSurfaceV1,
+            /// The surface got its first configure event. Before it, the
+            /// surface has no buffer.
+            configured: bool = false,
+        },
+        shell: ShellSurface,
+    },
+    /// The output of the layer surface.
+    output: *Output,
     wp_viewport: *wp.Viewport,
     buffers: [2]render_.Buffer = .{ .{}, .{} },
 
-    fn create() !*Surface {
+    fn create(output: *Output) !*Surface {
         const self = try ctx.gpa.create(Surface);
         errdefer ctx.gpa.destroy(self);
 
@@ -78,20 +95,49 @@ const Surface = struct {
 
         self.* = .{
             .wl_surface = wl_surface,
-            .shell_surface = undefined,
+            .role = undefined,
+            .output = output,
             .wp_viewport = wp_viewport,
         };
-        try self.shell_surface.init(wl_surface, .tooltip);
+
+        if (ctx.zwlr_layer_shell) |layer_shell| if (output.wl_output) |wl_output| {
+            const layer_surface = try layer_shell.getLayerSurface(wl_surface, wl_output, .overlay, "kwm-tooltip");
+            self.role = .{ .layer = .{ .zwlr_layer_surface = layer_surface } };
+            layer_surface.setListener(*Surface, layer_surface_listener, self);
+            // The margins from the top left corner of the output place the
+            // tooltip. The exclusive zones of other surfaces do not move it.
+            layer_surface.setAnchor(.{ .top = true, .left = true });
+            layer_surface.setExclusiveZone(-1);
+            layer_surface.setKeyboardInteractivity(.none);
+            // A size for the first commit. draw gives the size of the text.
+            layer_surface.setSize(1, 1);
+            wl_surface.commit();
+            return self;
+        };
+
+        self.role = .{ .shell = undefined };
+        try self.role.shell.init(wl_surface, .tooltip);
         return self;
     }
 
     fn destroy(self: *Surface) void {
-        self.shell_surface.deinit();
+        switch (self.role) {
+            .layer => |layer| layer.zwlr_layer_surface.destroy(),
+            .shell => |*shell| shell.deinit(),
+        }
         self.wp_viewport.destroy();
         self.wl_surface.destroy();
         self.buffers[0].deinit();
         self.buffers[1].deinit();
         ctx.gpa.destroy(self);
+    }
+
+    /// The surface can show a buffer.
+    fn ready(self: *const Surface) bool {
+        return switch (self.role) {
+            .layer => |layer| layer.configured,
+            .shell => true,
+        };
     }
 
     fn next_buffer(self: *Surface) ?*render_.Buffer {
@@ -104,6 +150,28 @@ const Surface = struct {
         return null;
     }
 };
+
+
+fn layer_surface_listener(
+    zwlr_layer_surface: *zwlr.LayerSurfaceV1,
+    event: zwlr.LayerSurfaceV1.Event,
+    s: *Surface,
+) void {
+    switch (event) {
+        .configure => |data| {
+            zwlr_layer_surface.ackConfigure(data.serial);
+            const layer = &s.role.layer;
+            if (!layer.configured) {
+                layer.configured = true;
+                // Now draw the tooltip.
+                request_render();
+            }
+        },
+        // The output went away.
+        .closed => if (surface == s) hide(),
+    }
+}
+
 
 var target: ?Target = null;
 var visible = false;
@@ -220,6 +288,17 @@ pub fn pointer(surface_y: ?i32) void {
 }
 
 
+/// A button of the pointer on `wl_surface`. river sends no interaction event
+/// for a layer surface: a press on the layer surface of the tooltip is a
+/// click. True when `wl_surface` is that surface.
+pub fn pointer_button(wl_surface: *wl.Surface, button: types.Button, pressed: bool) bool {
+    const s = surface orelse return false;
+    if (s.wl_surface != wl_surface or s.role != .layer) return false;
+    if (pressed) click(button);
+    return true;
+}
+
+
 /// A click on the tooltip runs the command of the line under the pointer.
 pub fn click(button: types.Button) void {
     if (button != .left or !visible) return;
@@ -319,12 +398,16 @@ pub fn render() void {
     };
     if (text.len == 0) return hide();
 
+    // A layer surface stays on its output.
+    if (surface) |s| if (s.output != t.bar.output) hide();
     if (surface == null) {
-        surface = Surface.create() catch |err| {
+        surface = Surface.create(t.bar.output) catch |err| {
             log.err("create tooltip surface failed: {}", .{ err });
             return;
         };
     }
+    // The configure event of the layer surface requests a render again.
+    if (!surface.?.ready()) return;
     draw(surface.?, &t, text) catch |err| {
         log.err("draw tooltip failed: {}", .{ err });
         hide();
@@ -465,9 +548,18 @@ fn draw(s: *Surface, t: *const Target, text: []const u8) !void {
         .clickable = clickable(),
     });
 
-    s.shell_surface.sync_next_commit();
-    s.shell_surface.place(.top);
-    s.shell_surface.set_position(position.x, position.y);
+    switch (s.role) {
+        .layer => |layer| {
+            const margin = tooltip_place.on_output(position, output.x, output.y);
+            layer.zwlr_layer_surface.setSize(@intCast(logical_w), @intCast(logical_h));
+            layer.zwlr_layer_surface.setMargin(margin.y, 0, 0, margin.x);
+        },
+        .shell => |*shell| {
+            shell.sync_next_commit();
+            shell.place(.top);
+            shell.set_position(position.x, position.y);
+        },
+    }
 
     s.wl_surface.attach(buffer.wl_buffer, 0, 0);
     s.wl_surface.damageBuffer(0, 0, w, h);

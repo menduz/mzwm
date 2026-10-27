@@ -1260,6 +1260,11 @@ fn wl_pointer_listener(wl_pointer: *wl.Pointer, event: wl.Pointer.Event, seat: *
             const pressed = data.state == .pressed;
             const surface = seat.pointer_surface orelse return;
 
+            // The tooltip of the bar, as a layer surface.
+            if (comptime build_options.bar_enabled) {
+                if (tooltip.pointer_button(surface, seat.button, pressed)) return;
+            }
+
             // The close button of a title bar.
             if (comptime build_options.bar_enabled) {
                 if (TitleBar.pointer_button(surface, seat.pointer_surface_x, seat.pointer_surface_y, pressed)) return;

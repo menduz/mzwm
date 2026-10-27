@@ -58,6 +58,14 @@ pub fn place(t: Tooltip) Position {
 }
 
 
+/// The place of a tooltip at `position` on the output at `output_x`,
+/// `output_y`, in the coordinates of that output: the margins of a layer
+/// surface at the top left corner of the output.
+pub fn on_output(position: Position, output_x: i32, output_y: i32) Position {
+    return .{ .x = position.x - output_x, .y = position.y - output_y };
+}
+
+
 pub const Size = struct {
     width: i32,
     height: i32,
@@ -179,4 +187,9 @@ test "place: above a bar at the bottom, the cursor does not cover the tooltip" {
     t.pointer_y = 1070;
     t.bar_y = 900;
     try testing.expectEqual(Position{ .x = 1500, .y = 900 }, place(t));
+}
+
+test "on_output: the place on an output at the right of another output" {
+    try testing.expectEqual(Position{ .x = 100, .y = 20 }, on_output(.{ .x = 2020, .y = 380 }, 1920, 360));
+    try testing.expectEqual(Position{ .x = 0, .y = 0 }, on_output(.{ .x = 0, .y = 0 }, 0, 0));
 }

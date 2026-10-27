@@ -1,6 +1,7 @@
 # Tests the tooltip of a widget with click commands: the tooltip is below the
 # pointer, thus the pointer goes straight down from the widget into the
-# tooltip, and a click on a line runs its command. Run it with the
+# tooltip, and a click on a line runs its command. The tooltip is above a
+# layer surface of the overlay layer (a notification). Run it with the
 # environment of `kwm-test-tooltip` in tests.nix. Refer to
 # src/kwm/tooltip_place.zig.
 #
@@ -50,6 +51,19 @@ PY
 source "$TEST_LIB"
 
 start_input
+
+# A red layer surface on the overlay layer below the bar, from y 20 to y 200,
+# as a notification of dunst. The tooltip must be above it.
+python3 "$TEST_LAYER" "$work/layer.mapped" 20 180 &
+pids+=("$!")
+for _ in $(seq 50); do
+  [ -e "$work/layer.mapped" ] && break
+  sleep 0.1
+done
+if [ ! -e "$work/layer.mapped" ]; then
+  echo "kwm-test-$TEST_NAME: test-layer.py did not map its surface" >&2
+  exit 1
+fi
 sleep 1
 
 # The pointer on the widget. The tooltip shows at once.
@@ -59,19 +73,19 @@ sleep 1
 grim "$work/hover.png"
 
 # The rows of the tooltip at x 636, below the bar (y 20): the pixels that
-# are not black. The cursor is at the right of x 641, thus not at x 636.
+# are not red. The cursor is at the right of x 641, thus not at x 636.
 # Without the fix, the tooltip is at the right of the cursor, and x 636 has
-# no tooltip.
+# no tooltip. A tooltip below the red layer surface does not show.
 read -r top bottom <<<"$(python3 - "$work/hover.png" <<'PY'
 import sys
 from PIL import Image
 image = Image.open(sys.argv[1]).convert("RGB")
-rows = [y for y in range(20, 200) if image.getpixel((636, y)) != (0, 0, 0)]
+rows = [y for y in range(20, 200) if image.getpixel((636, y)) != (255, 0, 0)]
 print(rows[0], rows[-1]) if rows else print("none none")
 PY
 )"
 if [ "$top" = none ]; then
-  echo "FAIL: the tooltip is below the pointer (no tooltip at x 636)"
+  echo "FAIL: the tooltip is below the pointer, above the layer surfaces of the overlay layer (no tooltip at x 636)"
   failed=1
 else
   echo "ok: the tooltip is below the pointer (rows $top to $bottom)"

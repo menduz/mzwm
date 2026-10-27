@@ -11,6 +11,7 @@ const wayland = @import("wayland");
 const wl = wayland.client.wl;
 const wp = wayland.client.wp;
 const river = wayland.client.river;
+const zwlr = wayland.client.zwlr;
 
 const kwm = @import("kwm");
 const flags = @import("flags");
@@ -40,6 +41,7 @@ const Globals = struct {
     rwm: ?*river.WindowManagerV1 = null,
     rwm_xkb_bindings: ?*river.XkbBindingsV1 = null,
     rwm_layer_shell: ?*river.LayerShellV1 = null,
+    zwlr_layer_shell: ?*zwlr.LayerShellV1 = null,
     rwm_inputs: kwm.RiverInputs = .{},
 };
 
@@ -143,6 +145,7 @@ pub fn main(init: process.Init) !void {
             rwm,
             rwm_xkb_bindings,
             rwm_layer_shell,
+            globals.zwlr_layer_shell,
             globals.rwm_inputs,
         );
     }
@@ -175,6 +178,10 @@ fn registry_listener(registry: *wl.Registry, event: wl.Registry.Event, globals: 
                 globals.rwm_xkb_bindings = registry.bind(global.name, river.XkbBindingsV1, @min(global.version, 3)) catch return;
             } else if (mem.orderZ(u8, global.interface, river.LayerShellV1.interface.name) == .eq) {
                 globals.rwm_layer_shell = registry.bind(global.name, river.LayerShellV1, 1) catch return;
+            } else if (mem.orderZ(u8, global.interface, zwlr.LayerShellV1.interface.name) == .eq) {
+                // The tooltip of the bar is a layer surface. Refer to
+                // src/kwm/tooltip.zig.
+                globals.zwlr_layer_shell = registry.bind(global.name, zwlr.LayerShellV1, @min(global.version, 4)) catch return;
             } else if (comptime build_options.kwim_enabled) {
                 if (mem.orderZ(u8, global.interface, river.InputManagerV1.interface.name) == .eq) {
                     globals.rwm_inputs.input_manager = registry.bind(global.name, river.InputManagerV1, 1) catch return;

@@ -21,6 +21,7 @@
   wayland-scanner,
   pkg-config,
   wlr-protocols,
+  wayland-protocols,
   wlroots,
   terminus_font,
   dejavu_fonts,
@@ -32,8 +33,9 @@ let
     ps.dbus-next
   ]);
 
-  # The pywayland modules of the virtual input protocols, for test-input.py.
-  # wayland.xml is necessary for the types of the core protocol.
+  # The pywayland modules of the virtual input protocols, for test-input.py,
+  # and of wlr-layer-shell, for test-layer.py. wayland.xml is necessary for
+  # the types of the core protocol, xdg-shell.xml for wlr-layer-shell.
   # pywayland-scanner finds the directory of wayland.xml with pkg-config.
   protocols =
     runCommand "kwm-test-protocols"
@@ -50,6 +52,8 @@ let
         pywayland-scanner -o $out/kwm_test_protocols -i \
           ${wayland-scanner}/share/wayland/wayland.xml \
           ${wlr-protocols}/share/wlr-protocols/unstable/wlr-virtual-pointer-unstable-v1.xml \
+          ${wlr-protocols}/share/wlr-protocols/unstable/wlr-layer-shell-unstable-v1.xml \
+          ${wayland-protocols}/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml \
           ${wlroots.src}/protocol/virtual-keyboard-unstable-v1.xml
       '';
 
@@ -96,6 +100,7 @@ let
         export TEST_CLIENT=${./test-client.py}
         export TEST_LIB=${./test-lib.sh}
         export TEST_INPUT=${./test-input.py}
+        export TEST_LAYER=${./test-layer.py}
         export TEST_PORTAL=${./test-portal.py}
         export TEST_CAPTIONS=${./test-captions.py}
         export TEST_TRAY=${./test-tray.py}

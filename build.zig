@@ -74,6 +74,9 @@ pub fn build(b: *std.Build) void {
     scanner.addSystemProtocol("staging/cursor-shape/cursor-shape-v1.xml");
     scanner.addSystemProtocol("staging/fractional-scale/fractional-scale-v1.xml");
     scanner.addSystemProtocol("staging/single-pixel-buffer/single-pixel-buffer-v1.xml");
+    // wlr-layer-shell refers to xdg_popup.
+    scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml");
+    scanner.addCustomProtocol(b.path("protocol/wlr-layer-shell-unstable-v1.xml"));
     scanner.addCustomProtocol(b.path("protocol/river-window-management-v1.xml"));
     scanner.addCustomProtocol(b.path("protocol/river-xkb-bindings-v1.xml"));
     scanner.addCustomProtocol(b.path("protocol/river-layer-shell-v1.xml"));
@@ -93,6 +96,7 @@ pub fn build(b: *std.Build) void {
     scanner.generate("wp_cursor_shape_manager_v1", 1);
     scanner.generate("wp_fractional_scale_manager_v1", 1);
     scanner.generate("wp_single_pixel_buffer_manager_v1", 1);
+    scanner.generate("zwlr_layer_shell_v1", 4);
     scanner.generate("river_window_manager_v1", 4);
     scanner.generate("river_xkb_bindings_v1", 3);
     scanner.generate("river_layer_shell_v1", 1);
