@@ -53,6 +53,9 @@ pub const State = struct {
     blink: bool = false,
     /// The bars of a gauge widget. Refer to gauge.zig.
     gauge: gauge.Levels = .{},
+    /// The icon before the text. Refer to `common.Output`.
+    icon: std.ArrayList(u8) = .empty,
+    icon_color: ?u32 = null,
     /// `text` without the color codes, for the flashing.
     plain: std.ArrayList(u8) = .empty,
     /// Awake-clock milliseconds of the next update.
@@ -69,6 +72,7 @@ pub const State = struct {
     fn deinit(self: *State) void {
         script.stop(&self.script);
         self.text.deinit(ctx.gpa);
+        self.icon.deinit(ctx.gpa);
         self.plain.deinit(ctx.gpa);
         self.tooltip.deinit(ctx.gpa);
         self.tooltip_on_click.deinit(ctx.gpa);
@@ -205,6 +209,8 @@ fn set(state: *State, out: *const common.Output) bool {
     if (state.hidden == out.hidden
         and state.blink == out.blink
         and state.gauge.eql(&out.gauge)
+        and state.icon_color == out.icon_color
+        and mem.eql(u8, state.icon.items, out.icon.items)
         and mem.eql(u8, state.text.items, out.text.items)
         and mem.eql(u8, state.tooltip.items, out.tooltip.items)
         and mem.eql(u8, state.tooltip_on_click.items, out.tooltip_on_click.items)) return false;
@@ -212,6 +218,9 @@ fn set(state: *State, out: *const common.Output) bool {
     state.hidden = out.hidden;
     state.blink = out.blink;
     state.gauge = out.gauge;
+    state.icon_color = out.icon_color;
+    state.icon.clearRetainingCapacity();
+    state.icon.appendSlice(ctx.gpa, out.icon.items) catch return false;
     state.text.clearRetainingCapacity();
     state.text.appendSlice(ctx.gpa, out.text.items) catch return false;
     state.plain.clearRetainingCapacity();

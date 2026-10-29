@@ -190,6 +190,8 @@
         .widget_colors = .{
             .warning = 0xffb354ff,
             .critical = 0xff3333ff,
+            // the class "accent" of a script widget: stands out, does not flash
+            .accent = 0xf29718ff,
         },
         // milliseconds before the tooltip of a widget shows, 0: at once
         .tooltip_delay = 500,

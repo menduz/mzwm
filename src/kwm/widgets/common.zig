@@ -26,9 +26,15 @@ pub const Output = struct {
     blink: bool = false,
     /// The bars of a gauge widget. Refer to gauge.zig.
     gauge: gauge.Levels = .{},
+    /// A symbolic icon before the text: its name in the icon theme of the
+    /// tray. Empty: no icon. Refer to icons.zig.
+    icon: std.ArrayList(u8) = .empty,
+    /// The color of the icon. null: the color of the bar text.
+    icon_color: ?u32 = null,
 
     pub fn deinit(self: *Output) void {
         self.text.deinit(ctx.gpa);
+        self.icon.deinit(ctx.gpa);
         self.tooltip.deinit(ctx.gpa);
         self.tooltip_on_click.deinit(ctx.gpa);
     }

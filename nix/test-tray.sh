@@ -12,10 +12,16 @@ set -euo pipefail
 
 TEST_NAME=tray
 
-# config.def.zon with the collapsed tray and the hicolor icon theme.
+# config.def.zon with the collapsed tray and the hicolor icon theme, and a
+# script widget at the right of the clock: the symbolic icon "playsym" with
+# the class "accent" (refer to src/kwm/widgets/script.zig). The script waits
+# for the icon theme below: kwm reads the icon theme at the first icon.
 TEST_KWM_CONFIG=$(sed -e 's/\.collapse = false,/.collapse = true,/' \
-  -e 's/\.icon_theme = "Adwaita",/.icon_theme = "hicolor",/' "$TEST_DEFAULT_CONFIG")
+  -e 's/\.icon_theme = "Adwaita",/.icon_theme = "hicolor",/' \
+  -e 's/^            \.{ \.clock = \.{} },$/&\n            .{ .script = .{ .exec = "sleep 2; printf \x27%s\\\\n\x27 \x27{\\"icon\\":\\"playsym-symbolic\\",\\"class\\":\\"accent\\"}\x27; sleep 1000", .interval = 0, .return_type = .json } },/' \
+  "$TEST_DEFAULT_CONFIG")
 grep -q '\.collapse = true,' <<<"$TEST_KWM_CONFIG"
+grep -q 'playsym-symbolic' <<<"$TEST_KWM_CONFIG"
 
 # shellcheck source=test-lib.sh
 source "$TEST_LIB"
@@ -40,6 +46,7 @@ square_svg 000000 >"$icons/scalable/apps/netsym-symbolic.svg"
 square_svg ff0000 >"$icons/scalable/apps/colorapp.svg"
 square_svg 00ff00 >"$icons/scalable/apps/attn.svg"
 square_svg 0000ff >"$icons/scalable/apps/blue.svg"
+square_svg 000000 >"$icons/scalable/apps/playsym-symbolic.svg"
 
 mkfifo "$work/tray"
 python3 "$TEST_TRAY" "$work/tray" netsym:netsym:Active colorapp:colorapp:Active attn:attn:Active &
@@ -130,7 +137,13 @@ expect_one() {
 }
 
 expect_tray "collapsed, the bar shows only the symbolic item" yes no no
-grim "$work/bar.png"
+# The icon of the script widget at the right end moves the tray: wait for
+# it before the place of the symbolic item.
+for _ in $(seq 50); do
+  grim "$work/bar.png"
+  [ "$(square "$work/bar.png" f29718)" != none ] && break
+  sleep 0.1
+done
 symbolic_x=$(square "$work/bar.png" a1a1a1)
 
 input move $((symbolic_x + 6)) 8
@@ -153,6 +166,34 @@ if [ "${symbolic_box% *}" = "14 14" ] && [ "${red_box% *}" = "16 16" ] && [ "$sy
   echo "ok: the symbolic icon is 2 pixels smaller, on the same middle line"
 else
   echo "FAIL: the symbolic icon is 2 pixels smaller, on the same middle line (symbolic: $symbolic_box, regular: $red_box)"
+  failed=1
+fi
+
+# The script widget at the right of the clock: its symbolic icon has the
+# accent color (#f29718), the size of a symbolic tray icon and the middle
+# line of the tray icons, and nothing is at its right. The bar is 20
+# pixels high; the border of a focused window has the same color, below it.
+read -r ax0 ay0 ax1 ay1 clock_x1 <<<"$(python3 - "$work/bar.png" <<'PY'
+import sys
+from PIL import Image
+image = Image.open(sys.argv[1]).convert("RGB")
+pixels = image.load()
+width = image.size[0]
+accent = [(x, y) for y in range(20) for x in range(width // 2, width) if pixels[x, y] == (0xf2, 0x97, 0x18)]
+if not accent:
+    print("none none none none none")
+    sys.exit()
+x0 = min(p[0] for p in accent)
+text = [x for y in range(20) for x in range(x0 - 80, x0) if pixels[x, y] == (0xa1, 0xa1, 0xa1)]
+print(x0, min(p[1] for p in accent), max(p[0] for p in accent), max(p[1] for p in accent), max(text) if text else "none")
+PY
+)"
+if [ "$ax0" != none ] && [ $((ax1 - ax0 + 1)) = 14 ] && [ $((ay1 - ay0 + 1)) = 14 ] \
+  && [ $((ay0 + ay1 + 1)) = "$red_middle" ] && [ "$clock_x1" != none ] && [ "$clock_x1" -lt "$ax0" ] \
+  && [ $((ax1)) -ge $((1280 - 12)) ]; then
+  echo "ok: the icon of the script widget is at the right of the clock, 14 pixels, in the accent color"
+else
+  echo "FAIL: the icon of the script widget (accent box $ax0 $ay0 $ax1 $ay1, clock ends at $clock_x1, middle of the tray icons $red_middle)"
   failed=1
 fi
 

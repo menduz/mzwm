@@ -1160,9 +1160,18 @@ const GaugeDraw = struct {
     bg: u32,
 };
 
+/// A symbolic icon of a widget in a row, in a square of `size` (the size of
+/// a tray icon). Refer to tray_icon.zig.
+const IconDraw = struct {
+    image: *pixman.Image,
+    symbolic: bool,
+    size: i32,
+    symbolic_size: i32,
+};
+
 const WidgetRow = struct {
     side: widgets.Side,
-    texts: std.ArrayList(struct { index: usize, text: StatusText, gauge: ?GaugeDraw = null }) = .empty,
+    texts: std.ArrayList(struct { index: usize, text: StatusText, gauge: ?GaugeDraw = null, icon: ?IconDraw = null }) = .empty,
     gap: u32 = 0,
     width: u32 = 0,
 
@@ -1196,15 +1205,36 @@ fn rasterize_widgets(self: *Self, side: widgets.Side, fg: pixman.Color) !WidgetR
             try row.texts.append(ctx.gpa, .{ .index = index, .text = text, .gauge = g });
             continue;
         }
-        if (state.text.items.len == 0) continue;
+        const icon = self.widget_icon(&state);
+        if (state.text.items.len == 0 and icon == null) continue;
 
-        var text = try self.rasterize_status(widgets.text(&state), fg);
+        var text: StatusText = if (state.text.items.len > 0)
+            try self.rasterize_status(widgets.text(&state), fg)
+        else .{ .width = 0 };
         errdefer text.deinit();
         if (row.texts.items.len > 0) row.width += row.gap;
         row.width += text.width;
-        try row.texts.append(ctx.gpa, .{ .index = index, .text = text });
+        if (icon) |i| {
+            row.width += @intCast(i.size);
+            // A space of half a gap between the icon and the text.
+            if (text.width > 0) row.width += row.gap / 2;
+        }
+        try row.texts.append(ctx.gpa, .{ .index = index, .text = text, .icon = icon });
     }
     return row;
+}
+
+
+/// The symbolic icon of a widget, in the color of its class, or in the
+/// color of the bar text. null: no icon, or no file for its name.
+fn widget_icon(self: *Self, state: *const widgets.State) ?IconDraw {
+    if (comptime !build_options.tray_enabled) return null;
+    if (state.icon.items.len == 0) return null;
+    const size = self.icon_size();
+    const symbolic_size = tray_icon.symbolic_size(size, self.scale);
+    const color = state.icon_color orelse theme.bar_scheme(.status).normal.fg;
+    const icon = @import("icons.zig").get(state.icon.items, "", size, symbolic_size, color) orelse return null;
+    return .{ .image = icon.image, .symbolic = icon.symbolic, .size = size, .symbolic_size = symbolic_size };
 }
 
 
@@ -1236,6 +1266,14 @@ fn draw_widgets(
         if (item.gauge) |g| {
             draw_gauge(buffer, &g, x, @divFloor(@as(i32, @intCast(self.height(false))) - g.height, 2), bg);
             x += @intCast(item.text.width);
+        }
+        if (item.icon) |icon| {
+            const side = if (icon.symbolic) icon.symbolic_size else icon.size;
+            const offset = tray_icon.offset(icon.size, side);
+            const top = @divFloor(@as(i32, @intCast(self.height(false))) - icon.size, 2);
+            draw_image(buffer, icon.image, x + offset, top + offset, side);
+            x += icon.size;
+            if (item.text.width > 0) x += @intCast(row.gap / 2);
         }
         for (item.text.runs.items) |run| {
             const cc, const text = run;

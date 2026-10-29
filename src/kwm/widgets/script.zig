@@ -5,6 +5,11 @@
 //! "tooltip_on_click" is not in waybar: a list with a shell command for each
 //! line of the tooltip. A click on the line runs its command. An empty string
 //! or null: the line has no command.
+//!
+//! "icon" is not in waybar either: the name of a symbolic icon in the icon
+//! theme of the tray, before the text. The bar draws it as a symbolic icon
+//! of the tray (2 pixels smaller than the tray icons), in the color of the
+//! class. The class "accent" gives a color that stands out.
 
 const std = @import("std");
 const mem = std.mem;
@@ -134,11 +139,13 @@ pub fn read(cfg: anytype, data: *Data, out: *common.Output) !bool {
 }
 
 
-/// The classes "warning" and "critical" give a color. The class "blink"
-/// makes the widget flash.
+/// The classes "critical", "warning" and "accent" give a color, in this
+/// order of precedence. The class "blink" makes the widget flash.
 fn apply_class(name: []const u8, color: *?u32, out: *common.Output) void {
-    if (mem.eql(u8, name, "critical")) color.* = ctx.cfg.bar.widget_colors.critical;
-    if (mem.eql(u8, name, "warning") and color.* == null) color.* = ctx.cfg.bar.widget_colors.warning;
+    const colors = &ctx.cfg.bar.widget_colors;
+    if (mem.eql(u8, name, "critical")) color.* = colors.critical;
+    if (mem.eql(u8, name, "warning") and color.* != colors.critical) color.* = colors.warning;
+    if (mem.eql(u8, name, "accent") and color.* == null) color.* = colors.accent;
     if (mem.eql(u8, name, "blink")) out.blink = true;
 }
 
@@ -169,6 +176,12 @@ fn parse(cfg: anytype, line: []const u8, out: *common.Output) !void {
             if (object.get("text")) |value| if (value == .string) {
                 try common.append_colored(&out.text, color, value.string);
             };
+            // "icon" is not in waybar: a symbolic icon before the text, in
+            // the color of the class.
+            if (object.get("icon")) |value| if (value == .string) {
+                try out.icon.appendSlice(ctx.gpa, value.string);
+                out.icon_color = color;
+            };
             if (object.get("tooltip")) |value| if (value == .string) {
                 try out.tooltip.appendSlice(ctx.gpa, value.string);
             };
@@ -183,5 +196,5 @@ fn parse(cfg: anytype, line: []const u8, out: *common.Output) !void {
             };
         },
     }
-    out.hidden = out.text.items.len == 0;
+    out.hidden = out.text.items.len == 0 and out.icon.items.len == 0;
 }

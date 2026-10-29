@@ -131,6 +131,9 @@ end: []const widget.Widget = &.{},
 widget_colors: struct {
     warning: u32 = 0xffa500ff,
     critical: u32 = 0xff5555ff,
+    /// The class "accent" of a script widget: a color that stands out,
+    /// without the flashing.
+    accent: u32 = 0xf29718ff,
 } = .{},
 
 /// Milliseconds that the pointer stays on a widget before its tooltip shows.
