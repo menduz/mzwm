@@ -103,7 +103,9 @@ pub const Script = clickable(struct {
     interval: u32 = 0,
     /// .text: the line is the text.
     /// .json: the line is an object with "text", "tooltip" and "class", as
-    /// waybar reads it. The classes "warning" and "critical" select colors.
+    /// waybar reads it. The classes "warning" and "critical" select colors,
+    /// "blink" flashes, and "badge" fills the widget with the color (refer
+    /// to src/kwm/widget_class.zig).
     /// A tooltip line that starts with ^#RRGGBBAA has that color.
     /// "tooltip_on_click" is a list with a shell command for each line of
     /// the tooltip. A click on the line runs the command.

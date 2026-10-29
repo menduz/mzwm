@@ -10,6 +10,8 @@
 //! theme of the tray, before the text. The bar draws it as a symbolic icon
 //! of the tray (2 pixels smaller than the tray icons), in the color of the
 //! class. The class "accent" gives a color that stands out.
+//!
+//! The classes are in widget_class.zig.
 
 const std = @import("std");
 const mem = std.mem;
@@ -19,6 +21,8 @@ const log = std.log.scoped(.widgets);
 const posix = @import("posix");
 
 const common = @import("common.zig");
+const widget_class = @import("../widget_class.zig");
+const widgets = @import("../widgets.zig");
 const ctx = common.ctx;
 
 pub const Process = struct {
@@ -139,17 +143,6 @@ pub fn read(cfg: anytype, data: *Data, out: *common.Output) !bool {
 }
 
 
-/// The classes "critical", "warning" and "accent" give a color, in this
-/// order of precedence. The class "blink" makes the widget flash.
-fn apply_class(name: []const u8, color: *?u32, out: *common.Output) void {
-    const colors = &ctx.cfg.bar.widget_colors;
-    if (mem.eql(u8, name, "critical")) color.* = colors.critical;
-    if (mem.eql(u8, name, "warning") and color.* != colors.critical) color.* = colors.warning;
-    if (mem.eql(u8, name, "accent") and color.* == null) color.* = colors.accent;
-    if (mem.eql(u8, name, "blink")) out.blink = true;
-}
-
-
 fn parse(cfg: anytype, line: []const u8, out: *common.Output) !void {
     switch (cfg.return_type) {
         .text => try out.text.appendSlice(ctx.gpa, line),
@@ -163,21 +156,25 @@ fn parse(cfg: anytype, line: []const u8, out: *common.Output) !void {
             const object = parsed.value.object;
 
             // "class" is a name or a list of names, as in waybar.
-            var color: ?u32 = null;
+            const colors = widgets.class_colors();
+            var style: widget_class.Style = .{};
             if (object.get("class")) |class| switch (class) {
-                .string => |name| apply_class(name, &color, out),
+                .string => |name| widget_class.apply(&style, name, &colors),
                 .array => |names| for (names.items) |name| {
-                    if (name == .string) apply_class(name.string, &color, out);
+                    if (name == .string) widget_class.apply(&style, name.string, &colors);
                 },
                 else => {},
             };
-            // A flashing widget is red when no class gives a color.
-            if (out.blink and color == null) color = ctx.cfg.bar.widget_colors.critical;
+            widget_class.finish(&style, &colors);
+            out.blink = style.blink;
+            // The text of a badge has the color of bar.zig.
+            if (style.badge) out.badge = style.color;
+            const color = if (style.badge) null else style.color;
             if (object.get("text")) |value| if (value == .string) {
                 try common.append_colored(&out.text, color, value.string);
             };
             // "icon" is not in waybar: a symbolic icon before the text, in
-            // the color of the class.
+            // the color of the class (a badge: the color of its text).
             if (object.get("icon")) |value| if (value == .string) {
                 try out.icon.appendSlice(ctx.gpa, value.string);
                 out.icon_color = color;

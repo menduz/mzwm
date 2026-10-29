@@ -81,6 +81,7 @@
           test-drag = b.tests.drag;
           test-tray = b.tests.tray;
           test-gauge = b.tests.gauge;
+          test-badge = b.tests.badge;
           test-theme = b.tests.theme;
           test-deck = b.tests.deck;
           test-csd-margin = b.tests.csd-margin;

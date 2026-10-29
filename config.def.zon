@@ -192,6 +192,8 @@
             .critical = 0xff3333ff,
             // the class "accent" of a script widget: stands out, does not flash
             .accent = 0xf29718ff,
+            // the text of the class "badge" of a script widget, on a fill of its color
+            .badge_text = 0xffffffff,
         },
         // milliseconds before the tooltip of a widget shows, 0: at once
         .tooltip_delay = 500,

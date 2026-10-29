@@ -133,6 +133,7 @@ let
     drag = mkTest "drag";
     tray = mkTest "tray";
     gauge = mkTest "gauge";
+    badge = mkTest "badge";
     # The test of the theme also looks at the desktop color.
     theme = mkTestWith kwmWithBackground "theme";
     deck = mkTest "deck";
@@ -150,6 +151,7 @@ tests
     bar = mkCheck "bar" "A change of the status of the bar needs no manage sequence";
     title-bar = mkCheck "title-bar" "The title bar of a window with server side decorations";
     gauge = mkCheck "gauge" "The gauge widget draws two bars with one border between them, and a column for each core";
+    badge = mkCheck "badge" "A flashing badge changes between white text on a red fill and the text of the bar, at the same place";
     tray = mkCheck "tray" "The collapsed tray shows the symbolic items, the items that need attention, and all items under the pointer";
     drag = mkCheck "drag" "A drag of a window by its title bar makes it floating, and an edge of the output makes it tiled";
     theme = mkCheck "theme" "kwm follows the GTK theme of the settings portal, also for the desktop color";

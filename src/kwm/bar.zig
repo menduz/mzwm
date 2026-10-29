@@ -34,6 +34,7 @@ const tooltip = @import("tooltip.zig");
 const tray = @import("tray.zig");
 const tray_icon = @import("tray_icon.zig");
 const gauge = @import("gauge.zig");
+const widget_class = @import("widget_class.zig");
 
 const ctx = Context.get();
 const color_pattern = mvzr.compile("\\^#([0-9a-zA-Z]{8}|!)").?;
@@ -1171,7 +1172,17 @@ const IconDraw = struct {
 
 const WidgetRow = struct {
     side: widgets.Side,
-    texts: std.ArrayList(struct { index: usize, text: StatusText, gauge: ?GaugeDraw = null, icon: ?IconDraw = null }) = .empty,
+    texts: std.ArrayList(struct {
+        index: usize,
+        text: StatusText,
+        gauge: ?GaugeDraw = null,
+        icon: ?IconDraw = null,
+        /// The fill of a badge, or null.
+        fill: ?pixman.Color = null,
+        /// Pixels between the edge of a badge and its text, also without
+        /// the fill.
+        badge_pad: u32 = 0,
+    }) = .empty,
     gap: u32 = 0,
     width: u32 = 0,
 
@@ -1205,11 +1216,13 @@ fn rasterize_widgets(self: *Self, side: widgets.Side, fg: pixman.Color) !WidgetR
             try row.texts.append(ctx.gpa, .{ .index = index, .text = text, .gauge = g });
             continue;
         }
-        const icon = self.widget_icon(&state);
+        const badge = widgets.badge(&state);
+        const icon = self.widget_icon(&state, badge);
         if (state.text.items.len == 0 and icon == null) continue;
 
+        const text_fg = if (badge) |b| render_.utils.color(b.text) else fg;
         var text: StatusText = if (state.text.items.len > 0)
-            try self.rasterize_status(widgets.text(&state), fg)
+            try self.rasterize_status(widgets.text(&state), text_fg)
         else .{ .width = 0 };
         errdefer text.deinit();
         if (row.texts.items.len > 0) row.width += row.gap;
@@ -1219,20 +1232,31 @@ fn rasterize_widgets(self: *Self, side: widgets.Side, fg: pixman.Color) !WidgetR
             // A space of half a gap between the icon and the text.
             if (text.width > 0) row.width += row.gap / 2;
         }
-        try row.texts.append(ctx.gpa, .{ .index = index, .text = text, .icon = icon });
+        // A badge has a quarter of a gap at each side, also in the off
+        // phase of the flashing, so that the widgets do not move.
+        const badge_pad = if (state.badge != null) row.gap / 4 else 0;
+        row.width += 2 * badge_pad;
+        try row.texts.append(ctx.gpa, .{
+            .index = index,
+            .text = text,
+            .icon = icon,
+            .fill = if (badge) |b| render_.utils.color(b.fill) else null,
+            .badge_pad = badge_pad,
+        });
     }
     return row;
 }
 
 
 /// The symbolic icon of a widget, in the color of its class, or in the
-/// color of the bar text. null: no icon, or no file for its name.
-fn widget_icon(self: *Self, state: *const widgets.State) ?IconDraw {
+/// color of the bar text. The icon of a badge is in the color of the text
+/// of the badge. null: no icon, or no file for its name.
+fn widget_icon(self: *Self, state: *const widgets.State, badge: ?widget_class.Badge) ?IconDraw {
     if (comptime !build_options.tray_enabled) return null;
     if (state.icon.items.len == 0) return null;
     const size = self.icon_size();
     const symbolic_size = tray_icon.symbolic_size(size, self.scale);
-    const color = state.icon_color orelse theme.bar_scheme(.status).normal.fg;
+    const color = if (badge) |b| b.text else state.icon_color orelse theme.bar_scheme(.status).normal.fg;
     const icon = @import("icons.zig").get(state.icon.items, "", size, symbolic_size, color) orelse return null;
     return .{ .image = icon.image, .symbolic = icon.symbolic, .size = size, .symbolic_size = symbolic_size };
 }
@@ -1263,6 +1287,13 @@ fn draw_widgets(
     var x: i32 = x0 + @as(i32, @intCast(@divFloor(pad, 2)));
     for (row.texts.items) |item| {
         const start = x;
+        if (item.fill) |*fill| {
+            const width = item.text.width + 2 * item.badge_pad + if (item.icon) |icon|
+                @as(u32, @intCast(icon.size)) + if (item.text.width > 0) row.gap / 2 else 0
+            else 0;
+            fill_rect(buffer, .{ .x = x, .y = 0, .width = @intCast(width), .height = @intCast(self.height(false)) }, fill);
+        }
+        x += @intCast(item.badge_pad);
         if (item.gauge) |g| {
             draw_gauge(buffer, &g, x, @divFloor(@as(i32, @intCast(self.height(false))) - g.height, 2), bg);
             x += @intCast(item.text.width);
@@ -1279,6 +1310,7 @@ fn draw_widgets(
             const cc, const text = run;
             x += self.font.render_text(buffer, text, &cc, x, y);
         }
+        x += @intCast(item.badge_pad);
         self.widget_rects.appendBounded(.{
             .side = row.side,
             .index = item.index,

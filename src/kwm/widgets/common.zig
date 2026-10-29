@@ -24,6 +24,9 @@ pub const Output = struct {
     /// The widget flashes: its text changes between its colors and the
     /// color of the bar text.
     blink: bool = false,
+    /// The fill of a badge (the class "badge"). The text has no color
+    /// codes. null: not a badge. Refer to widget_class.zig.
+    badge: ?u32 = null,
     /// The bars of a gauge widget. Refer to gauge.zig.
     gauge: gauge.Levels = .{},
     /// A symbolic icon before the text: its name in the icon theme of the

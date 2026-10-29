@@ -134,6 +134,9 @@ widget_colors: struct {
     /// The class "accent" of a script widget: a color that stands out,
     /// without the flashing.
     accent: u32 = 0xf29718ff,
+    /// The text of a widget with the class "badge", on the fill of its
+    /// color. Refer to src/kwm/widget_class.zig.
+    badge_text: u32 = 0xffffffff,
 } = .{},
 
 /// Milliseconds that the pointer stays on a widget before its tooltip shows.

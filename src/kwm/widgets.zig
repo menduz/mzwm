@@ -25,6 +25,7 @@ const script = @import("widgets/script.zig");
 const temperature = @import("widgets/temperature.zig");
 const gauge_widget = @import("widgets/gauge.zig");
 const gauge = @import("gauge.zig");
+const widget_class = @import("widget_class.zig");
 
 const Widget = config.widget.Widget;
 
@@ -51,6 +52,8 @@ pub const State = struct {
     hidden: bool = false,
     /// The widget flashes. Refer to `text`.
     blink: bool = false,
+    /// The fill of a badge. Refer to `common.Output`.
+    badge: ?u32 = null,
     /// The bars of a gauge widget. Refer to gauge.zig.
     gauge: gauge.Levels = .{},
     /// The icon before the text. Refer to `common.Output`.
@@ -208,6 +211,7 @@ fn update(item: *const Widget, state: *State, now: i64) bool {
 fn set(state: *State, out: *const common.Output) bool {
     if (state.hidden == out.hidden
         and state.blink == out.blink
+        and state.badge == out.badge
         and state.gauge.eql(&out.gauge)
         and state.icon_color == out.icon_color
         and mem.eql(u8, state.icon.items, out.icon.items)
@@ -217,6 +221,7 @@ fn set(state: *State, out: *const common.Output) bool {
 
     state.hidden = out.hidden;
     state.blink = out.blink;
+    state.badge = out.badge;
     state.gauge = out.gauge;
     state.icon_color = out.icon_color;
     state.icon.clearRetainingCapacity();
@@ -238,6 +243,18 @@ fn set(state: *State, out: *const common.Output) bool {
 /// its text with colors and its text without colors.
 pub fn text(state: *const State) []const u8 {
     return if (state.blink and !blink_on) state.plain.items else state.text.items;
+}
+
+
+/// The fill and the text color of a badge now, or null.
+pub fn badge(state: *const State) ?widget_class.Badge {
+    return widget_class.badge_now(state.badge, state.blink, blink_on, &class_colors());
+}
+
+
+pub fn class_colors() widget_class.Colors {
+    const c = &ctx.cfg.bar.widget_colors;
+    return .{ .warning = c.warning, .critical = c.critical, .accent = c.accent, .badge_text = c.badge_text };
 }
 
 
