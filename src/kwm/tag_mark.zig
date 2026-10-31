@@ -2,7 +2,8 @@
 //! shape of the mark shows the layout of the tag (`Shape`):
 //! - monocle: a square.
 //! - tile: two columns, 0.6 and 0.4 of the width. The second column (the
-//!   stack) has three windows, one gap apart.
+//!   stack) has three windows, one gap apart; the last window is the
+//!   smallest.
 //! - centered master: three columns, 0.2, 0.6 and 0.2 of the width.
 //! - float: two windows, the front window at the bottom right, as the
 //!   restore button of a title bar of Windows 98.
@@ -92,14 +93,16 @@ pub fn covers(shape_: Shape, side: i32, gap: i32, x: i32, y: i32) bool {
             if (in_parts(&.{master_part}, along)) return true;
             if (!in_parts(&.{stack}, along)) return false;
             // The stack has three windows, one gap apart. The pixels that
-            // do not divide by three go to the windows at the ends (two
-            // pixels) or to the middle window (one pixel).
+            // do not divide by three go to the first windows: the last
+            // window is the smallest.
             const free_across = side - 2 * gap;
-            const end = @divFloor(free_across, 3) + @as(i32, if (@mod(free_across, 3) == 2) 1 else 0);
+            const small = @divFloor(free_across, 3);
+            const top = small + @as(i32, if (@mod(free_across, 3) > 0) 1 else 0);
+            const middle = free_across - top - small;
             return in_parts(&.{
-                .{ .start = 0, .len = end },
-                .{ .start = end + gap, .len = free_across - 2 * end },
-                .{ .start = side - end, .len = end },
+                .{ .start = 0, .len = top },
+                .{ .start = top + gap, .len = middle },
+                .{ .start = side - small, .len = small },
             }, across);
         },
         .centered => |axis| {
@@ -199,7 +202,7 @@ test "covers: the monocle layout, a square with square corners" {
 }
 
 test "covers: the tile layout, two columns of 0.6 and 0.4, three windows in the stack" {
-    // The windows of the stack have 3, 2 and 3 rows, with gaps of 1 row.
+    // The windows of the stack have 3, 3 and 2 rows, with gaps of 1 row.
     try expect_mark(10, .{ .tile = .left }, 1, &.{
         "#####.####",
         "#####.####",
@@ -207,17 +210,17 @@ test "covers: the tile layout, two columns of 0.6 and 0.4, three windows in the 
         "#####.....",
         "#####.####",
         "#####.####",
+        "#####.####",
         "#####.....",
         "#####.####",
         "#####.####",
-        "#####.####",
     });
-    // At scale 2: windows of 5, 6 and 5 rows, with gaps of 2 rows.
+    // At scale 2: windows of 6, 5 and 5 rows, with gaps of 2 rows.
     const got = mark_rows(20, .{ .tile = .left }, 2);
     const window = "###########..#######";
     const gap = "###########.........";
     for (got, 0..) |row, i| {
-        const in_gap = (i >= 5 and i < 7) or (i >= 13 and i < 15);
+        const in_gap = (i >= 6 and i < 8) or (i >= 13 and i < 15);
         try testing.expectEqualStrings(if (in_gap) gap else window, &row);
     }
 }
@@ -230,8 +233,8 @@ test "covers: the master area at the right, and at the top" {
         ".....#####",
         "####.#####",
         "####.#####",
-        ".....#####",
         "####.#####",
+        ".....#####",
         "####.#####",
         "####.#####",
     });
@@ -242,10 +245,10 @@ test "covers: the master area at the right, and at the top" {
         "##########",
         "##########",
         "..........",
-        "###.##.###",
-        "###.##.###",
-        "###.##.###",
-        "###.##.###",
+        "###.###.##",
+        "###.###.##",
+        "###.###.##",
+        "###.###.##",
     });
 }
 

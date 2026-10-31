@@ -39,7 +39,7 @@ expect_state b " tiled=1 " "window b is tiled"
 
 # mark <png> [name]: the lengths of the runs of pixels of the mark in its top
 # row, in its middle row and in its right column, for example "5 4 / 5 4 /
-# 3 2 3" for two columns with three windows in the second column. The mark
+# 3 3 2" for two columns with three windows in the second column. The mark
 # is in the cell of
 # tag 1, at the left end of the bar. With a name and TEST_SCREENSHOT_DIR,
 # also write the mark 8 times larger.
@@ -115,8 +115,8 @@ expect_layout() {
 }
 
 # The font of the bar is Terminus of 12 pixels: the mark has 10 pixels. The
-# windows of the stack of the tile mark have 3, 2 and 3 pixels.
-expect_mark "5 4 / 5 4 / 3 2 3" tile
+# windows of the stack of the tile mark have 3, 3 and 2 pixels.
+expect_mark "5 4 / 5 4 / 3 3 2" tile
 
 # menu_box <png>: "left top right bottom" of the menu below the bar, or
 # "none none none none". The menu has the background of the bar, the windows
@@ -200,7 +200,7 @@ input press
 input release
 expect_layout tile "a click on the selected tag goes to the next layout"
 input move 300 400
-expect_mark "5 4 / 5 4 / 3 2 3" tile
+expect_mark "5 4 / 5 4 / 3 3 2" tile
 input move 9 7
 sleep 1
 mark_log
@@ -244,7 +244,7 @@ expect_layout monocle "a quick second press of Super+1 goes to the monocle layou
 expect_mark "10 / 10 / 10" monocle
 double
 expect_layout tile "a quick second press of Super+1 goes from the last layout to the first layout"
-expect_mark "5 4 / 5 4 / 3 2 3" tile
+expect_mark "5 4 / 5 4 / 3 3 2" tile
 
 # Tag 2 does not show. The pointer enters tag 2 (x 20 to 39), and a click
 # shows tag 2. The pointer did not enter a selected tag: no menu, also after
