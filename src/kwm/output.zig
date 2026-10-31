@@ -14,6 +14,7 @@ const config = @import("config");
 
 const utils = @import("utils.zig");
 const Layout = @import("layout.zig");
+const layout_cycle = @import("layout_cycle.zig");
 const Context = @import("context.zig");
 const Window = @import("window.zig");
 const types = @import("types.zig");
@@ -342,13 +343,14 @@ pub fn cycle_layout(self: *Self, direction: types.Direction) void {
     log.debug("<{*}> tag {b} cycle layout {s}", .{ self, self.main_tag, @tagName(direction) });
 
     const i = @ctz(self.main_tag);
-    const count = @typeInfo(Layout.Type).@"enum".fields.len;
-    const current: usize = @intFromEnum(self.layout_tag[i]);
-    const next = switch (direction) {
-        .forward => (current + 1) % count,
-        .reverse => (current + count - 1) % count,
-    };
-    self.set_current_layout(@enumFromInt(next));
+    // Only the layouts of `cycle_layouts`. Refer to layout_cycle.zig.
+    const next = layout_cycle.next(
+        Layout.Type,
+        ctx.cfg.cycle_layouts,
+        self.layout_tag[i],
+        direction == .forward,
+    ) orelse return;
+    self.set_current_layout(next);
 }
 
 

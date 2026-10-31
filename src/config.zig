@@ -215,6 +215,18 @@ pub const Config = struct {
     default_layout: kwm.Layout.Type,
     layout: kwm.Layout,
 
+    /// The layouts of cycle_layout, of a quick second press of a tag and of
+    /// the menu of the selected tag in the bar, in this order. The other
+    /// layouts stay: switch_layout, default_layout and the rules can select
+    /// them. Refer to src/kwm/layout_cycle.zig.
+    cycle_layouts: []const kwm.Layout.Type = &.{ .tile, .centered_master, .float, .monocle },
+
+    /// A set_output_tag to the tag that the output shows, this number of
+    /// milliseconds or less after the last set_output_tag to the same tag,
+    /// goes to the next layout of `cycle_layouts`. Thus a quick second press
+    /// of a tag key changes the layout of the tag. null: no change.
+    tag_repeat_cycle: ?u32 = 500,
+
     bindings: struct {
         repeat_info: struct {
             rate: i32,

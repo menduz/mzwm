@@ -193,6 +193,7 @@ test {
     if (comptime build_options.overlay_enabled) _ = @import("kwm/vt.zig");
     _ = @import("kwm/child.zig");
     _ = @import("kwm/layout/accordion.zig");
+    _ = @import("kwm/layout_cycle.zig");
     _ = @import("kwm/decoration.zig");
     _ = @import("kwm/desktop.zig");
     _ = @import("kwm/drag.zig");

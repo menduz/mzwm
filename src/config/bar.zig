@@ -52,6 +52,11 @@ tags: ?struct {
     tags: []const []const u8,
     /// Text color of the tags without windows. null uses the color of the scheme.
     empty_fg: ?u32 = null,
+    /// The mark of a selected tag shows the layout of the output, and the
+    /// pointer on a selected tag shows the menu of the layouts of
+    /// `cycle_layouts`. false: a square, and no menu. Refer to
+    /// src/kwm/tag_mark.zig.
+    layout: bool = true,
     click: meta.enum_struct(
         kwm.Button,
         ?kwm.BindingAction

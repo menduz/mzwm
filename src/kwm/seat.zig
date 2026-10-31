@@ -28,6 +28,7 @@ const floating_zig = @import("floating.zig");
 const refocus_zig = @import("refocus.zig");
 const decoration_zig = @import("decoration.zig");
 const drag_zig = @import("drag.zig");
+const layout_cycle = @import("layout_cycle.zig");
 const hover_focus = @import("hover_focus.zig");
 const SandboxLabel = if (build_options.bar_enabled) @import("sandbox_label.zig") else void;
 const TitleBar = if (build_options.bar_enabled) @import("title_bar.zig") else void;
@@ -87,6 +88,8 @@ window_below_pointer: struct {
     new: bool = false,
 } = .{},
 has_pointer_interaction: bool = false,
+/// The last set_output_tag. Refer to layout_cycle.zig.
+tag_repeat: layout_cycle.TagRepeat = .{},
 /// river sends modifiers_update for Super, for the overlay. Refer to
 /// overlay.zig.
 modifiers_watched: bool = false,
@@ -681,7 +684,15 @@ fn handle_actions(self: *Self) void {
             },
             .set_output_tag => |data| {
                 if (ctx.current_output) |output| {
-                    output.set_tag(data.tag.of(.{ .output = output }));
+                    const tag = data.tag.of(.{ .output = output });
+                    // A quick second press of the shown tag goes to the next
+                    // layout. Refer to layout_cycle.zig.
+                    const now = std.Io.Timestamp.now(ctx.io, .awake).toMilliseconds();
+                    if (self.tag_repeat.press(output, tag, output.tag, now, ctx.cfg.tag_repeat_cycle)) {
+                        output.cycle_layout(.forward);
+                    } else {
+                        output.set_tag(tag);
+                    }
                 }
             },
             .set_window_tag => |data| {

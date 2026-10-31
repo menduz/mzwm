@@ -66,6 +66,12 @@
             .tags = .{ "1", "2", "3", "4", "5", "6", "7", "8", "9" },
             // text color of tags without windows, null to use the scheme color
             .empty_fg = 0x1d2023ff,
+            // the mark of a selected tag shows the layout: two columns (tile), three
+            // columns (centered master), two windows (float) or a square (monocle);
+            // the pointer on a selected tag shows the menu of the layouts of
+            // `cycle_layouts`, and a click on a line selects the layout
+            // false: a square, and no menu
+            .layout = true,
 
             // click callback
             // each part supports left/right/middle/side/extra/forward/back/task
@@ -91,46 +97,49 @@
                 .left = .{ .switch_mode = .{ .mode = "default" } },
             },
         },
-        // set null to disable layout part
-        .layout = .{
-            // layout tags show on bar
-            // {{?}} will be replaced with managed window count, when the count is 0, `?` will be used as replacement.
-            // e.g. [{{{=}}], when managed window count > 0, [N] will be showed, else [=] will be showed
-            .tags = .{
-                .tile = .{
-                    .left = "[]=",
-                    .right = "=[]",
-                    .top = "[^]",
-                    .bottom = "[_]",
-                },
-                .grid = .{
-                    .horizontal = "|+|",
-                    .vertical = "|||",
-                },
-                .monocle = "[{{=}}]",
-                .deck = .{
-                    .left = "[{{D}}]=",
-                    .right = "=[{{D}}]",
-                    .top = "[{{D}}^]",
-                    .bottom = "[{{D}}_]",
-                },
-                .scroller = "[==]",
-                .centered_master = .{
-                    .horizontal = "=[]=",
-                    .vertical = "=[V]="
-                },
-                .float = "><>",
-            },
-
-            // a click goes to the next layout, a right click to the previous layout
-            // the tooltip shows all layouts in this order
-            // or switch between the last two layouts:
-            // .left = .switch_to_previous_layout,
-            .click = .{
-                .left = .{ .cycle_layout = .{ .direction = .forward } },
-                .right = .{ .cycle_layout = .{ .direction = .reverse } },
-            },
-        },
+        // the layout part: a text for each layout; null: no layout part, the mark of
+        // the selected tag shows the layout (refer to `tags.layout`)
+        .layout = null,
+        // or:
+        // .layout = .{
+        //     // layout tags show on bar
+        //     // {{?}} will be replaced with managed window count, when the count is 0, `?` will be used as replacement.
+        //     // e.g. [{{{=}}], when managed window count > 0, [N] will be showed, else [=] will be showed
+        //     .tags = .{
+        //         .tile = .{
+        //             .left = "[]=",
+        //             .right = "=[]",
+        //             .top = "[^]",
+        //             .bottom = "[_]",
+        //         },
+        //         .grid = .{
+        //             .horizontal = "|+|",
+        //             .vertical = "|||",
+        //         },
+        //         .monocle = "[{{=}}]",
+        //         .deck = .{
+        //             .left = "[{{D}}]=",
+        //             .right = "=[{{D}}]",
+        //             .top = "[{{D}}^]",
+        //             .bottom = "[{{D}}_]",
+        //         },
+        //         .scroller = "[==]",
+        //         .centered_master = .{
+        //             .horizontal = "=[]=",
+        //             .vertical = "=[V]="
+        //         },
+        //         .float = "><>",
+        //     },
+        //
+        //     // a click goes to the next layout, a right click to the previous layout
+        //     // the tooltip shows the menu of the layouts
+        //     // or switch between the last two layouts:
+        //     // .left = .switch_to_previous_layout,
+        //     .click = .{
+        //         .left = .{ .cycle_layout = .{ .direction = .forward } },
+        //         .right = .{ .cycle_layout = .{ .direction = .reverse } },
+        //     },
+        // },
         // set null to disable title part
         .title = .{
             // true: the colors and the gradient of a title bar of the GTK theme (xfwm4/themerc), without a border
@@ -410,6 +419,13 @@
     // .centered_master
     // .float
     .default_layout = .tile,
+    // the layouts of cycle_layout, of a quick second press of a tag key and of the menu
+    // of the selected tag, in this order; the other layouts stay, and switch_layout,
+    // default_layout and the rules can select them
+    .cycle_layouts = .{ .tile, .centered_master, .float, .monocle },
+    // a second set_output_tag to the shown tag in this many milliseconds goes to the
+    // next layout of `cycle_layouts`; null: no change
+    .tag_repeat_cycle = 500,
     .layout = .{
         .tile = .{
             .nmaster = 1,

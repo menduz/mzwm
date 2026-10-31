@@ -28,6 +28,7 @@ const Context = @import("context.zig");
 const Seat = @import("seat.zig");
 const Output = @import("output.zig");
 const Window = @import("window.zig");
+const Layout = @import("layout.zig");
 const ShellSurface = @import("shell_surface.zig");
 const widgets = @import("widgets.zig");
 const tooltip = @import("tooltip.zig");
@@ -274,10 +275,13 @@ pub fn over_tray(self: *const Self, surface: *wl.Surface, surface_x: i32) bool {
 }
 
 
-/// The widget or the layout area under a pointer at (`surface_x`,
-/// `surface_y`) on `surface`, for the tooltip and for scroll events.
+/// The widget, the layout area or the selected tag under a pointer at
+/// (`surface_x`, `surface_y`) on `surface`, for the tooltip and for scroll
+/// events.
 pub fn widget_at(self: *Self, surface: *wl.Surface, surface_x: i32, surface_y: i32) ?tooltip.Target {
-    if (self.hidden or surface != self.dynamic_component.wl_surface) return null;
+    if (self.hidden) return null;
+    if (surface == self.static_component.wl_surface) return self.selected_tag_at(surface_x, surface_y);
+    if (surface != self.dynamic_component.wl_surface) return null;
 
     const x = utils.logical2physics(i32, surface_x, self.scale);
     // The layout area is between the first two splits: the end of the mode
@@ -307,6 +311,35 @@ pub fn widget_at(self: *Self, surface: *wl.Surface, surface_x: i32, surface_y: i
         .pointer_x = surface_left + surface_x,
         .pointer_y = surface_top + surface_y,
     };
+}
+
+
+/// The menu of the layouts for a pointer at (`surface_x`, `surface_y`) on
+/// the tags. null: the pointer is not on a selected tag, or `tags.layout` is
+/// false.
+fn selected_tag_at(self: *Self, surface_x: i32, surface_y: i32) ?tooltip.Target {
+    const area = ctx.cfg.bar.tags orelse return null;
+    if (!area.layout) return null;
+    const x = utils.logical2physics(i32, surface_x, self.scale);
+    var start: i32 = 0;
+    for (0.., self.static_splits.items) |i, end| {
+        defer start = end;
+        if (x >= end) continue;
+        if (i >= 32 or x < start) return null;
+        const tag = @as(u32, 1) << @as(u5, @intCast(i));
+        if (self.output.tag & tag == 0) return null;
+        return .{
+            .bar = self,
+            .area = .layout,
+            .x = self.output.x + utils.physics2logical(i32, start, self.scale),
+            .pointer_x = self.output.x + surface_x,
+            .pointer_y = self.output.y + surface_y + switch (ctx.cfg.bar.position) {
+                .top => 0,
+                .bottom => self.output.height - self.height(true),
+            },
+        };
+    }
+    return null;
 }
 
 
@@ -587,6 +620,9 @@ fn render_static_component(self: *Self) void {
     const buffer = self.next_buffer(.static, w, h) orelse return;
 
     const windows_tag: u32 = self.output.occupied_tags();
+    const shape: tag_mark.Shape = if (area.layout)
+        layout_shape(self.output, std.meta.activeTag(self.output.current_layout()))
+    else .square;
 
     const scheme = theme.bar_scheme(.tags);
     const select_fg = render_.utils.color(scheme.select.fg);
@@ -612,9 +648,10 @@ fn render_static_component(self: *Self) void {
         const tag_width = self.tag_cell_width(text, pad, h);
         defer x += @intCast(tag_width);
 
-        // A selected tag shows a square in the place of its label.
+        // A selected tag shows a mark in the place of its label: the shape
+        // of the layout, or a square.
         if (self.output.tag & tag != 0) {
-            self.draw_tag_mark(buffer, &select_fg, x, tag_width, y);
+            self.draw_tag_mark(buffer, &select_fg, shape, x, tag_width, y);
             continue;
         }
 
@@ -634,36 +671,84 @@ fn render_static_component(self: *Self) void {
 }
 
 
-/// The mark of a selected tag: a square with round corners, in the center of
-/// the cell of `cell_width` pixels at `x`. It covers the place of a digit and
-/// one logical pixel more on each side. `y` is the top of the text. Refer to
+/// The mark of a selected tag: `shape` in the center of the cell of
+/// `cell_width` pixels at `x`. It covers the place of a digit and one
+/// logical pixel more on each side. `y` is the top of the text. Refer to
 /// tag_mark.zig.
 fn draw_tag_mark(
     self: *const Self,
     buffer: *render_.Buffer,
     c: *const pixman.Color,
+    shape: tag_mark.Shape,
     x: i16,
     cell_width: u16,
     y: i16,
 ) void {
-    const margin: i32 = @intCast(@max(1, self.scale / 120));
-    const mark = tag_mark.place(self.font.height(), self.font.font.ascent, margin);
+    const mark = self.mark_place();
     const side: i32 = @min(mark.side, @as(i32, cell_width));
-    const top: i32 = @as(i32, y) + mark.top;
     const left: i32 = @as(i32, x) + @divFloor(@as(i32, cell_width) - side, 2);
+    draw_mark(buffer, c, shape, left, @as(i32, y) + mark.top, side, mark.gap);
+}
+
+
+/// The place of a mark in a line of text of the bar font: the top from the
+/// top of the text, the side, and the gap (1 pixel for each scale of 1).
+pub fn mark_place(self: *const Self) struct { top: i32, side: i32, gap: i32 } {
+    const gap: i32 = @intCast(@max(1, self.scale / 120));
+    const mark = tag_mark.place(self.font.height(), self.font.font.ascent, gap);
+    return .{ .top = mark.top, .side = mark.side, .gap = gap };
+}
+
+
+/// Draw the mark `shape` of `side` pixels with its top left pixel at
+/// (`left`, `top`). Refer to tag_mark.covers.
+pub fn draw_mark(
+    buffer: *render_.Buffer,
+    c: *const pixman.Color,
+    shape: tag_mark.Shape,
+    left: i32,
+    top: i32,
+    side: i32,
+    gap: i32,
+) void {
     var row: i32 = 0;
     while (row < side) : (row += 1) {
-        const in = tag_mark.inset(side, row);
-        var rect = [_]pixman.Rectangle16 {
-            .{
-                .x = @intCast(left + in),
-                .y = @intCast(@max(0, top + row)),
-                .width = @intCast(side - 2 * in),
-                .height = 1,
-            },
-        };
-        _ = pixman.Image.fillRectangles(.src, buffer.image, c, 1, &rect);
+        if (top + row < 0) continue;
+        // Fill each run of pixels of the row with one rectangle.
+        var col: i32 = 0;
+        while (col < side) {
+            if (!tag_mark.covers(shape, side, gap, col, row)) {
+                col += 1;
+                continue;
+            }
+            const start = col;
+            while (col < side and tag_mark.covers(shape, side, gap, col, row)) col += 1;
+            fill_rect(buffer, .{ .x = left + start, .y = top + row, .width = col - start, .height = 1 }, c);
+        }
     }
+}
+
+
+/// The shape of the mark of `layout`, with the settings of the main tag of
+/// `output`. The layouts without a shape of their own give a square.
+pub fn layout_shape(output: *const Output, layout: Layout.Type) tag_mark.Shape {
+    const settings = &output.layouts[@ctz(output.main_tag)];
+    return switch (layout) {
+        .tile => .{ .tile = side_of(settings.tile.master_location) },
+        .deck => .{ .tile = side_of(settings.deck.master_location) },
+        .centered_master => .{ .centered = switch (settings.centered_master.direction) {
+            inline else => |d| @field(tag_mark.Axis, @tagName(d)),
+        } },
+        .float => .float,
+        .monocle, .grid, .scroller => .square,
+    };
+}
+
+
+fn side_of(location: types.LayoutMasterLocation) tag_mark.Side {
+    return switch (location) {
+        inline else => |l| @field(tag_mark.Side, @tagName(l)),
+    };
 }
 
 

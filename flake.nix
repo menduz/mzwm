@@ -86,6 +86,7 @@
           test-deck = b.tests.deck;
           test-csd-margin = b.tests.csd-margin;
           test-tooltip = b.tests.tooltip;
+          test-layout-menu = b.tests.layout-menu;
           test-overlay = b.tests.overlay;
         }
       );

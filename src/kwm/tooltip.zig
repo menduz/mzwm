@@ -1,6 +1,10 @@
 //! The tooltip of the bar widgets, of the layout area and of the tray items.
 //! There is one tooltip for all outputs.
 //!
+//! The tooltip of a selected tag and of the layout area is the menu of the
+//! layouts of `cycle_layouts`: each line shows the mark of the layout and
+//! its name. A click on a line selects the layout. Refer to tag_mark.zig.
+//!
 //! The pointer events of the bar select the target widget. After
 //! `bar.tooltip_delay` milliseconds, the next render sequence makes a surface
 //! below the widget. Shell surfaces change only in a manage or render
@@ -51,7 +55,7 @@ pub const Area = union(enum) {
         side: widgets.Side,
         index: usize,
     },
-    /// The tooltip shows all layouts.
+    /// The tooltip shows the menu of the layouts.
     layout,
     /// The tooltip of a tray item.
     tray: *tray.Item,
@@ -299,11 +303,19 @@ pub fn pointer_button(wl_surface: *wl.Surface, button: types.Button, pressed: bo
 }
 
 
-/// A click on the tooltip runs the command of the line under the pointer.
+/// A click on the tooltip runs the command of the line under the pointer,
+/// or selects the layout of the line.
 pub fn click(button: types.Button) void {
     if (button != .left or !visible) return;
     const t = target orelse return;
     const line = hovered orelse return;
+    if (line_layout(&t, line)) |layout| {
+        log.debug("click line {}: layout {s}", .{ line, @tagName(layout) });
+        t.bar.output.set_current_layout(layout);
+        ctx.manage_dirty(@src());
+        close();
+        return;
+    }
     const cmd = line_command(&t, line) orelse return;
     log.debug("click line {}: {s}", .{ line, cmd });
     ctx.spawn_shell(cmd);
@@ -327,10 +339,26 @@ fn line_command(t: *const Target, line: usize) ?[]const u8 {
 }
 
 
-/// True when a line of the tooltip has a click command.
+/// The layout of a line of the menu of the layouts, or null.
+fn line_layout(t: *const Target, line: usize) ?Layout.Type {
+    if (t.area != .layout) return null;
+    const layouts = ctx.cfg.cycle_layouts;
+    return if (line < layouts.len) layouts[line] else null;
+}
+
+
+/// True when a click on line `line` does something.
+fn line_clickable(t: *const Target, line: usize) bool {
+    return line_layout(t, line) != null or line_command(t, line) != null;
+}
+
+
+/// True when a line of the tooltip has a click command, or the tooltip is
+/// the menu of the layouts.
 fn clickable() bool {
     const t = target orelse return false;
     switch (t.area) {
+        .layout => return ctx.cfg.cycle_layouts.len > 0,
         .widget => |w| {
             const list = widgets.states(w.side);
             if (w.index >= list.len) return false;
@@ -422,12 +450,12 @@ pub fn deinit() void {
 }
 
 
-/// The layouts in the order of cycle_layout. ">> <<" is around the current
-/// layout.
+/// The layouts of `cycle_layouts`, in their order. ">> <<" is around the
+/// current layout. draw puts the mark of each layout before its line.
 fn layout_list(output: *Output, buffer: []u8) []const u8 {
     const current = std.meta.activeTag(output.current_layout());
     var len: usize = 0;
-    for (std.enums.values(Layout.Type), 0..) |layout, i| {
+    for (ctx.cfg.cycle_layouts, 0..) |layout, i| {
         const selected = layout == current;
         const line = std.fmt.bufPrint(buffer[len..], "{s}{s}{s}{s}", .{
             if (i == 0) "" else "\n",
@@ -435,6 +463,8 @@ fn layout_list(output: *Output, buffer: []u8) []const u8 {
             @tagName(layout),
             if (selected) " <<" else "",
         }) catch break;
+        // "centered master", not "centered_master".
+        mem.replaceScalar(u8, buffer[len..][0..line.len], '_', ' ');
         len += line.len;
     }
     return buffer[0..len];
@@ -455,6 +485,10 @@ fn draw(s: *Surface, t: *const Target, text: []const u8) !void {
     const scheme = theme.bar_base_scheme().normal;
     const pad: i32 = @divFloor(font.height(), 2);
     const line_height: i32 = font.height();
+    // The menu of the layouts: the mark of the layout before each line, and
+    // half of a pad between the mark and the text.
+    const mark = bar.mark_place();
+    const mark_w: i32 = if (t.area == .layout) mark.side + @divFloor(pad, 2) else 0;
 
     // Rasterize each line. Refer to tooltip_line.zig for the colors.
     var runs: std.ArrayList(*const fcft.TextRun) = .empty;
@@ -481,7 +515,7 @@ fn draw(s: *Surface, t: *const Target, text: []const u8) !void {
 
     // Not larger than the output.
     const size = tooltip_place.size(
-        width,
+        width + mark_w,
         runs.items.len,
         line_height,
         pad,
@@ -517,13 +551,17 @@ fn draw(s: *Surface, t: *const Target, text: []const u8) !void {
     // command.
     var y: i32 = top;
     for (shown, 0..) |run, i| {
-        const selected = hovered == i and line_command(t, i) != null;
+        const selected = hovered == i and line_clickable(t, i);
         if (selected) {
             rect[0] = .{ .x = 1, .y = @intCast(y), .width = @intCast(w - 2), .height = @intCast(line_height) };
             _ = pixman.Image.fillRectangles(.src, buffer.image, &fg, 1, &rect);
         }
         const color = if (colors.items[i]) |c| render_.utils.color(c) else fg;
-        _ = font.render_text(buffer, run, if (selected) &bg else &color, pad, y);
+        const text_color = if (selected) &bg else &color;
+        if (line_layout(t, i)) |layout| {
+            Bar.draw_mark(buffer, text_color, Bar.layout_shape(bar.output, layout), pad, y + mark.top, mark.side, mark.gap);
+        }
+        _ = font.render_text(buffer, run, text_color, pad + mark_w, y);
         y += line_height;
     }
 
