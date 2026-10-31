@@ -7,8 +7,8 @@
 # The helper reads one command per line from the fifo:
 #
 #     move X Y          move the pointer to X,Y of the output
-#     press             press the left button
-#     release           release the left button
+#     press [right]     press the left (or the right) button
+#     release [right]   release the left (or the right) button
 #     key CODE down|up  press or release the key with the evdev code CODE
 #                       (125: the left Super key)
 #
@@ -28,6 +28,7 @@ fifo, done_file = sys.argv[1], sys.argv[2]
 width, height = int(sys.argv[3]), int(sys.argv[4])
 
 BTN_LEFT = 0x110
+BTN_RIGHT = 0x111
 KEYMAP = b"""xkb_keymap {
   xkb_keycodes { include "evdev+aliases(qwerty)" };
   xkb_types { include "complete" };
@@ -90,7 +91,8 @@ with open(fifo) as commands:
         if words[0] == "move":
             pointer.motion_absolute(now(), int(words[1]), int(words[2]), width, height)
         elif words[0] in ("press", "release"):
-            pointer.button(now(), BTN_LEFT, 1 if words[0] == "press" else 0)
+            button = BTN_RIGHT if words[1:] == ["right"] else BTN_LEFT
+            pointer.button(now(), button, 1 if words[0] == "press" else 0)
         elif words[0] == "key":
             # wlroots updates the modifiers from the keys of the keymap.
             keyboard.key(now(), int(words[1]), 1 if words[2] == "down" else 0)

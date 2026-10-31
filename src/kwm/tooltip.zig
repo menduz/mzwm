@@ -3,7 +3,8 @@
 //!
 //! The tooltip of a selected tag and of the layout area is the menu of the
 //! layouts of `cycle_layouts`: each line shows the mark of the layout and
-//! its name. A click on a line selects the layout. Refer to tag_mark.zig.
+//! its name. A click on a line selects the layout. Refer to tag_mark.zig,
+//! and to tag_menu.zig for when the menu shows on a tag.
 //!
 //! The pointer events of the bar select the target widget. After
 //! `bar.tooltip_delay` milliseconds, the next render sequence makes a surface

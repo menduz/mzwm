@@ -224,7 +224,9 @@ pub const Config = struct {
     /// A set_output_tag to the tag that the output shows, this number of
     /// milliseconds or less after the last set_output_tag to the same tag,
     /// goes to the next layout of `cycle_layouts`. Thus a quick second press
-    /// of a tag key changes the layout of the tag. null: no change.
+    /// of a tag key changes the layout of the tag. A click on the shown tag
+    /// in the bar changes the layout at once, without this delay. null: no
+    /// change.
     tag_repeat_cycle: ?u32 = 500,
 
     bindings: struct {

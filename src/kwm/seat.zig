@@ -1379,12 +1379,15 @@ fn widget_under_pointer(self: *const Self) ?tooltip.Target {
 }
 
 
-fn hover_widget(self: *const Self) void {
+/// The pointer moved, or the bar changed under it: the tooltip and the menu
+/// of the layouts follow.
+pub fn hover_widget(self: *const Self) void {
     if (comptime build_options.bar_enabled) {
         if (self.pointer_surface) |surface| if (tooltip.is_surface(surface)) {
             return tooltip.pointer(self.pointer_surface_y);
         };
         tooltip.pointer(null);
+        @import("bar.zig").hover_tags(self.pointer_surface, self.pointer_surface_x);
         tooltip.hover(self.widget_under_pointer());
         if (comptime build_options.tray_enabled) @import("tray.zig").hover(self.bar_with_tray_under_pointer());
     }

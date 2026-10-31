@@ -68,9 +68,11 @@
             .empty_fg = 0x1d2023ff,
             // the mark of a selected tag shows the layout: two columns (tile), three
             // columns (centered master), two windows (float) or a square (monocle);
-            // the pointer on a selected tag shows the menu of the layouts of
-            // `cycle_layouts`, and a click on a line selects the layout
-            // false: a square, and no menu
+            // the pointer that enters a selected tag (or a click on it) shows the menu of
+            // the layouts of `cycle_layouts`, and a click on a line selects the layout;
+            // a left click on the shown tag goes to the next layout at once, a right
+            // click to the previous layout
+            // false: a square, no menu, and the clicks below
             .layout = true,
 
             // click callback
@@ -424,7 +426,8 @@
     // default_layout and the rules can select them
     .cycle_layouts = .{ .tile, .centered_master, .float, .monocle },
     // a second set_output_tag to the shown tag in this many milliseconds goes to the
-    // next layout of `cycle_layouts`; null: no change
+    // next layout of `cycle_layouts` (a click on the shown tag in the bar does not
+    // wait for a second click); null: no change
     .tag_repeat_cycle = 500,
     .layout = .{
         .tile = .{

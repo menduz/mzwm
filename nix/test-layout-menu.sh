@@ -1,7 +1,10 @@
 # Tests the layout of the selected tag: the mark of the selected tag shows
 # the layout, the pointer on the selected tag shows the menu of the layouts,
-# a click on a line of the menu selects the layout, and a quick second press
-# of Super+1 on tag 1 goes to the next layout. Run it with the environment of
+# a click on a line of the menu selects the layout, a click on the selected
+# tag goes to the next layout at once, and a quick second press of Super+1
+# on tag 1 goes to the next layout. The menu shows only when the pointer
+# enters a selected tag, or at a click on a selected tag. A right click on
+# the selected tag goes to the previous layout. Run it with the environment of
 # `kwm-test-layout-menu` in tests.nix. Refer to src/kwm/tag_mark.zig and
 # src/kwm/layout_cycle.zig.
 #
@@ -83,10 +86,17 @@ expect_mark() {
   fi
 }
 
+# mark_log: expect_layout looks only at the lines of the log after this
+# point.
+log_start=1
+mark_log() {
+  log_start=$(($(wc -l <"$work/river.log") + 1))
+}
+
 # expect_layout <layout> <description>: kwm sets the layout.
 expect_layout() {
   for _ in $(seq 20); do
-    if grep -q "set layout to $1" "$work/river.log"; then
+    if tail -n "+$log_start" "$work/river.log" | grep -q "set layout to $1"; then
       echo "ok: $2"
       return
     fi
@@ -99,14 +109,11 @@ expect_layout() {
 # The font of the bar is Terminus of 12 pixels: the mark has 10 pixels.
 expect_mark "5 4" tile
 
-# The pointer on tag 1. The menu shows at once, below the pointer. The menu
-# has the background of the bar, the windows and the gaps below the bar have
-# other colors. grim also shows the cursor.
-input move 9 6
-input move 9 7
-sleep 1
-grim "$work/hover.png"
-read -r left top right bottom <<<"$(python3 - "$work/hover.png" <<'PY'
+# menu_box <png>: "left top right bottom" of the menu below the bar, or
+# "none none none none". The menu has the background of the bar, the windows
+# and the gaps below the bar have other colors. grim also shows the cursor.
+menu_box() {
+  python3 - "$1" <<'PY'
 import sys
 from PIL import Image
 image = Image.open(sys.argv[1]).convert("RGB")
@@ -121,7 +128,30 @@ if points:
 else:
     print("none none none none")
 PY
-)"
+}
+
+# expect_menu <yes|no> <description>
+expect_menu() {
+  local box
+  for _ in $(seq 10); do
+    grim "$work/menu-check.png"
+    box=$(menu_box "$work/menu-check.png")
+    if { [ "$1" = yes ] && [[ $box != none* ]]; } || { [ "$1" = no ] && [[ $box == none* ]]; }; then
+      echo "ok: $2"
+      return
+    fi
+    sleep 0.2
+  done
+  echo "FAIL: $2 (menu: $box)"
+  failed=1
+}
+
+# The pointer on tag 1. The menu shows at once, below the pointer.
+input move 9 6
+input move 9 7
+sleep 1
+grim "$work/hover.png"
+read -r left top right bottom <<<"$(menu_box "$work/hover.png")"
 if [ "$top" = none ]; then
   echo "FAIL: the pointer on the selected tag shows the menu of the layouts"
   failed=1
@@ -145,37 +175,92 @@ crop = image.crop((0, 0, int(sys.argv[3]) + 4, int(sys.argv[4]) + 4))
 crop.resize((crop.width * 4, crop.height * 4), Image.NEAREST).save(sys.argv[2])
 PY
   fi
+  mark_log
   input press
   input release
   expect_layout monocle "a click on a line of the menu selects the layout"
   expect_mark "10" monocle
 fi
 
+# A click on the selected tag goes to the next layout at once, also a second
+# click one second later. grim shows the cursor: the pointer goes away from
+# the mark before expect_mark.
+input move 9 7
+mark_log
+input press
+input release
+expect_layout tile "a click on the selected tag goes to the next layout"
+input move 300 400
+expect_mark "5 4" tile
+input move 9 7
+sleep 1
+mark_log
+input press
+input release
+expect_layout centered_master "a second click one second later goes to the next layout"
+input move 300 400
+expect_mark "2 4 2" centered_master
+
 # Away from the bar. A single press of Super+1 on tag 1 does not change the
 # layout.
 input move 300 400
 sleep 1
+mark_log
 wtype -s 200 -M logo -s 100 1 -s 100 -m logo
 sleep 1
-expect_mark "10" monocle
+if tail -n "+$log_start" "$work/river.log" | grep -q "set layout to"; then
+  echo "FAIL: a single press of Super+1 on tag 1 does not change the layout"
+  failed=1
+else
+  echo "ok: a single press of Super+1 on tag 1 does not change the layout"
+fi
+expect_mark "2 4 2" centered_master
 
 # double: two presses of Super+1, 150 milliseconds between them.
 double() {
   sleep 1
+  mark_log
   wtype -s 200 -M logo -s 100 1 -s 150 1 -s 100 -m logo
 }
 
-double
-expect_layout tile "a quick second press of Super+1 goes from the last layout to the first layout"
-expect_mark "5 4" tile
-double
-expect_layout centered_master "a quick second press of Super+1 goes to the centered master layout"
-expect_mark "2 4 2" centered_master
 double
 expect_layout float "a quick second press of Super+1 goes to the float layout"
 # The middle row of the float mark: the left line of the window behind,
 # and the title bar of the front window.
 expect_mark "1 7" float
+double
+expect_layout monocle "a quick second press of Super+1 goes to the monocle layout"
+expect_mark "10" monocle
+double
+expect_layout tile "a quick second press of Super+1 goes from the last layout to the first layout"
+expect_mark "5 4" tile
+
+# Tag 2 does not show. The pointer enters tag 2 (x 20 to 39), and a click
+# shows tag 2. The pointer did not enter a selected tag: no menu, also after
+# a small move in the tag.
+input move 300 400
+sleep 0.5
+input move 30 7
+input press
+input release
+sleep 0.5
+input move 31 7
+sleep 0.5
+expect_menu no "a click that selects a tag does not show the menu"
+mark_log
+input press
+input release
+expect_layout centered_master "a click on the shown tag 2 goes to the next layout"
+expect_menu yes "a second click in the same place shows the menu"
+input move 300 400
+sleep 0.6
+expect_menu no "the menu goes away when the pointer leaves the tag"
+input move 30 7
+expect_menu yes "the pointer that comes back shows the menu"
+mark_log
+input press right
+input release right
+expect_layout tile "a right click on the shown tag goes to the previous layout"
 
 if grep -q "panic" "$work/river.log"; then
   echo "FAIL: kwm runs ($(grep -m1 panic "$work/river.log"))"

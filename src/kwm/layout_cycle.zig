@@ -6,6 +6,9 @@
 //! - A quick second press of the binding of the tag that the output shows
 //!   goes to the next layout (`TagRepeat`). seat.zig uses it for
 //!   set_output_tag.
+//! - A left click on the tag that the output shows in the bar goes to the
+//!   next layout at once, without a delay. A right click goes to the
+//!   previous layout (`click_direction`). bar.zig uses it.
 //!
 //! `zig build test` runs the tests below.
 
@@ -22,6 +25,25 @@ pub fn next(comptime T: type, list: []const T, current: T, forward: bool) ?T {
     const i = std.mem.indexOfScalar(T, list, current) orelse
         return if (forward) list[0] else list[list.len - 1];
     return if (forward) list[(i + 1) % list.len] else list[(i + list.len - 1) % list.len];
+}
+
+
+/// A button of the pointer, for `click_direction`.
+pub const Button = enum { left, right, other };
+
+
+/// A click with `button` on the label of `tag` in the bar. `shown` holds
+/// the tags that the output shows. When the output shows only `tag`, a left
+/// click goes to the next layout (true), and a right click to the previous
+/// layout (false). null: the click does the action of the configuration.
+/// `enabled` is `bar.tags.layout`: false gives null.
+pub fn click_direction(enabled: bool, button: Button, tag: u32, shown: u32) ?bool {
+    if (!enabled or tag != shown) return null;
+    return switch (button) {
+        .left => true,
+        .right => false,
+        .other => null,
+    };
 }
 
 
@@ -90,4 +112,16 @@ test "TagRepeat: no delay, no cycle" {
     var r: TagRepeat = .{};
     try testing.expect(!r.press(&a, 1, 1, 1000, null));
     try testing.expect(!r.press(&a, 1, 1, 1001, null));
+}
+
+test "click_direction: only a click on the tag that the output shows" {
+    try testing.expectEqual(@as(?bool, true), click_direction(true, .left, 1, 1));
+    try testing.expectEqual(@as(?bool, false), click_direction(true, .right, 1, 1));
+    try testing.expectEqual(@as(?bool, null), click_direction(true, .other, 1, 1));
+    try testing.expectEqual(@as(?bool, null), click_direction(true, .left, 2, 1));
+    try testing.expectEqual(@as(?bool, null), click_direction(true, .right, 2, 1));
+    // The output shows tags 1 and 2: the click does the action of the
+    // configuration, for example it shows only tag 1.
+    try testing.expectEqual(@as(?bool, null), click_direction(true, .left, 1, 3));
+    try testing.expectEqual(@as(?bool, null), click_direction(false, .left, 1, 1));
 }

@@ -22,6 +22,8 @@ const render_ = @import("render.zig");
 const sandbox = @import("sandbox.zig");
 const decoration = @import("decoration.zig");
 const tag_mark = @import("tag_mark.zig");
+const layout_cycle = @import("layout_cycle.zig");
+const tag_menu_zig = @import("tag_menu.zig");
 const bar_update = @import("bar_update.zig");
 const binding = @import("binding.zig");
 const Context = @import("context.zig");
@@ -40,6 +42,8 @@ const widget_class = @import("widget_class.zig");
 const ctx = Context.get();
 const color_pattern = mvzr.compile("\\^#([0-9a-zA-Z]{8}|!)").?;
 pub var status_buffer = [1]u8 { 0 } ** 256;
+/// The menu of the layouts on the tags of all bars. Refer to tag_menu.zig.
+var tag_menu: tag_menu_zig.State = .{};
 
 font: render_.Font = undefined,
 
@@ -182,6 +186,24 @@ pub fn handle_click(self: *Self, seat: *Seat) void {
             for (0.., self.static_splits.items) |i, split| {
                 if (x <= split) {
                     const tag = @as(u32, @intCast(1)) << @as(u5, @intCast(i));
+                    if (area.layout) {
+                        // A click on a selected tag shows the menu of the
+                        // layouts. Refer to tag_menu.zig.
+                        tag_menu.click(.{ .owner = self, .index = i }, self.output.tag & tag != 0);
+                        seat.hover_widget();
+                    }
+                    // A left click on the shown tag goes to the next layout
+                    // at once, a right click to the previous layout. Refer
+                    // to layout_cycle.zig.
+                    const button: layout_cycle.Button = switch (seat.button) {
+                        .left => .left,
+                        .right => .right,
+                        else => .other,
+                    };
+                    if (layout_cycle.click_direction(area.layout, button, tag, self.output.tag)) |forward| {
+                        action = .{ .cycle_layout = .{ .direction = if (forward) .forward else .reverse } };
+                        break;
+                    }
                     const callback_action = area.click.getter.get(seat.button) orelse return;
                     action = switch (callback_action) {
                         .set_window_tag => .{ .set_window_tag = .{ .tag = .{ .tag = tag } } },
@@ -314,12 +336,11 @@ pub fn widget_at(self: *Self, surface: *wl.Surface, surface_x: i32, surface_y: i
 }
 
 
-/// The menu of the layouts for a pointer at (`surface_x`, `surface_y`) on
-/// the tags. null: the pointer is not on a selected tag, or `tags.layout` is
-/// false.
-fn selected_tag_at(self: *Self, surface_x: i32, surface_y: i32) ?tooltip.Target {
-    const area = ctx.cfg.bar.tags orelse return null;
-    if (!area.layout) return null;
+/// The cell of a tag at `surface_x` of the tags: its index, its left edge
+/// in physical pixels, and true when the tag is selected.
+const TagCell = struct { index: usize, start: i32, selected: bool };
+
+fn tag_cell_at(self: *const Self, surface_x: i32) ?TagCell {
     const x = utils.logical2physics(i32, surface_x, self.scale);
     var start: i32 = 0;
     for (0.., self.static_splits.items) |i, end| {
@@ -327,19 +348,47 @@ fn selected_tag_at(self: *Self, surface_x: i32, surface_y: i32) ?tooltip.Target 
         if (x >= end) continue;
         if (i >= 32 or x < start) return null;
         const tag = @as(u32, 1) << @as(u5, @intCast(i));
-        if (self.output.tag & tag == 0) return null;
-        return .{
-            .bar = self,
-            .area = .layout,
-            .x = self.output.x + utils.physics2logical(i32, start, self.scale),
-            .pointer_x = self.output.x + surface_x,
-            .pointer_y = self.output.y + surface_y + switch (ctx.cfg.bar.position) {
-                .top => 0,
-                .bottom => self.output.height - self.height(true),
-            },
-        };
+        return .{ .index = i, .start = start, .selected = self.output.tag & tag != 0 };
     }
     return null;
+}
+
+
+/// The pointer is at `surface_x` of `surface`, or on no surface (null).
+/// The menu of the layouts shows when the pointer enters a selected tag.
+/// Call before `widget_at`. Refer to tag_menu.zig.
+pub fn hover_tags(surface: ?*wl.Surface, surface_x: i32) void {
+    var it = ctx.outputs.safeIterator(.forward);
+    while (it.next()) |output| {
+        const bar = &output.bar;
+        if (bar.hidden or surface != bar.static_component.wl_surface) continue;
+        const cell = bar.tag_cell_at(surface_x) orelse break;
+        tag_menu.hover(.{ .owner = bar, .index = cell.index }, cell.selected);
+        return;
+    }
+    tag_menu.hover(null, false);
+}
+
+
+/// The menu of the layouts for a pointer at (`surface_x`, `surface_y`) on
+/// the tags. null: the pointer is not on a selected tag, the pointer did not
+/// enter the tag while the tag was selected (refer to tag_menu.zig), or
+/// `tags.layout` is false.
+fn selected_tag_at(self: *Self, surface_x: i32, surface_y: i32) ?tooltip.Target {
+    const area = ctx.cfg.bar.tags orelse return null;
+    if (!area.layout) return null;
+    const cell = self.tag_cell_at(surface_x) orelse return null;
+    if (!tag_menu.shows(.{ .owner = self, .index = cell.index }, cell.selected)) return null;
+    return .{
+        .bar = self,
+        .area = .layout,
+        .x = self.output.x + utils.physics2logical(i32, cell.start, self.scale),
+        .pointer_x = self.output.x + surface_x,
+        .pointer_y = self.output.y + surface_y + switch (ctx.cfg.bar.position) {
+            .top => 0,
+            .bottom => self.output.height - self.height(true),
+        },
+    };
 }
 
 
