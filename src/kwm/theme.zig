@@ -104,11 +104,12 @@ pub fn bar_base_scheme() bar_colors.Bar.Scheme {
 }
 
 
-/// The colors of the title area of the bar. `focused`: the output has the
-/// focus. Refer to `bar.title.caption` in the configuration.
-pub fn bar_title(focused: bool) bar_colors.Caption {
+/// The colors of the title area of the bar. `name`: the GTK theme of the
+/// window, as in its title bar. `focused`: the output has the focus. Refer
+/// to `bar.title.caption` in the configuration.
+pub fn bar_title(name: ?[]const u8, focused: bool) bar_colors.Caption {
     const caption: ?bar_colors.Caption = if (bar_caption()) blk: {
-        const c = title_colors_of(null, focused);
+        const c = title_colors_of(name, focused);
         break :blk .{ .start = c.start, .end = c.end, .fg = c.text };
     } else null;
     return bar_colors.title(bar_scheme(.title), focused, caption);

@@ -1067,21 +1067,33 @@ fn render_title_bar(self: *Self) void {
         };
     }
 
-    // A window of a sandbox uses the GTK theme of its sandbox, as its border.
-    const theme_name = if (self.sandbox_name != null) self.sandbox_gtk_theme else null;
+    const theme_name = self.title_theme();
     var bevel = theme.bevel_of(theme_name, true);
     bevel.outline = 0;
     self.title_bar.?.render(&output.bar, .{
         .width = self.width,
         .focused = self.border_focused,
         .title = self.title orelse "",
-        .sandbox = if (self.sandbox_has_label) if (self.sandbox_name) |name| .{
-            .name = name,
-            .color = self.sandbox_color,
-        } else null else null,
+        .sandbox = self.title_sandbox(),
         .colors = theme.title_colors_of(theme_name, self.border_focused),
         .bevel = bevel,
     });
+}
+
+
+/// The sandbox before the title, in the title bar and in the bar. null: no
+/// sandbox, or the host. A window on the host shows no sandbox name.
+pub fn title_sandbox(self: *const Self) ?TitleBar.Sandbox {
+    if (!self.sandbox_has_label) return null;
+    const name = self.sandbox_name orelse return null;
+    return .{ .name = name, .color = self.sandbox_color };
+}
+
+
+/// The GTK theme of the title, in the title bar and in the bar. A window of a
+/// sandbox uses the GTK theme of its sandbox, as its border.
+pub fn title_theme(self: *const Self) ?[]const u8 {
+    return if (self.sandbox_name != null) self.sandbox_gtk_theme else null;
 }
 
 

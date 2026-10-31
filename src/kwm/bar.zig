@@ -1090,7 +1090,8 @@ fn draw_title(self: *Self, buffer: *render_.Buffer, start: i16, end: i16) void {
         all.deinit();
     }
 
-    const colors = theme.bar_title(self.output == ctx.current_output);
+    const focused = self.output == ctx.current_output;
+    const colors = theme.bar_title(window.title_theme(), focused);
     const fg = render_.utils.color(colors.fg);
     const bg = render_.utils.color(colors.start);
     if (colors.start == colors.end) {
@@ -1135,12 +1136,15 @@ fn draw_title(self: *Self, buffer: *render_.Buffer, start: i16, end: i16) void {
     }
 
     // The window of a sandbox: the name of the sandbox in the color of the
-    // sandbox, before the title. Refer to sandbox.zig.
-    if (window.sandbox_name) |name| draw_sandbox: {
+    // sandbox, before the title, as in the title bar. A window on the host
+    // shows no name. Refer to sandbox.zig.
+    if (window.title_sandbox()) |label| draw_sandbox: {
+        const name = label.name;
         const text_w = render_.utils.str_width(self.font.font, name) catch break :draw_sandbox;
         const cell_w: u16 = @intCast(@min(text_w + pad, width));
-        const sandbox_bg = render_.utils.color(window.sandbox_color);
-        const sandbox_fg = render_.utils.color(sandbox.text_color(window.sandbox_color));
+        const color = if (focused) label.color else sandbox.dim(label.color);
+        const sandbox_bg = render_.utils.color(color);
+        const sandbox_fg = render_.utils.color(sandbox.text_color(color));
         var cell = [_]pixman.Rectangle16 {
             .{ .x = x, .y = 0, .width = cell_w, .height = h },
         };

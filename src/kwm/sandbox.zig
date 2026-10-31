@@ -17,9 +17,9 @@
 //! sandbox, for example the shell prompt. Thus a run without a scope
 //! (SANDBOX_NO_SCOPE) is on the host for kwm.
 //!
-//! The bar, the border and the label of the window then show the sandbox.
-//! A window on the host has no label: only the bar shows "host". Refer to
-//! sandbox_label.zig.
+//! The bar, the title bar, the border and the label of the window then show
+//! the sandbox. A window on the host shows no name: only its border has the
+//! color of the host. Refer to sandbox_label.zig.
 //!
 //! `zig build test` runs the tests below.
 
@@ -59,8 +59,8 @@ pub const Info = struct {
     /// sandbox with the name "host".
     host: bool = false,
 
-    /// The window shows a label with the sandbox name. A window on the host
-    /// has no label. The bar shows the name.
+    /// The window shows the sandbox name: in its label, its title bar and
+    /// the bar. A window on the host shows no name.
     pub fn has_label(self: Info) bool {
         return !self.host;
     }
