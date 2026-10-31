@@ -252,7 +252,11 @@ pub fn manage(self: *Self) void {
         })) ctx.focus(window, window.managed_by_layout());
     }
 
+    const had_actions = self.unhandled_actions.items.len > 0;
     self.handle_actions();
+    // The actions can change the tags under the pointer: the menu of the
+    // layouts follows without a move of the pointer. Refer to tag_menu.zig.
+    if (had_actions) self.hover_widget();
 
     // modifiers_watch is part of the manage sequence. river 0.5 has it in
     // version 3 of river_xkb_bindings_v1.
@@ -688,7 +692,7 @@ fn handle_actions(self: *Self) void {
                     // A quick second press of the shown tag goes to the next
                     // layout. Refer to layout_cycle.zig.
                     const now = std.Io.Timestamp.now(ctx.io, .awake).toMilliseconds();
-                    if (self.tag_repeat.press(output, tag, output.tag, now, ctx.cfg.tag_repeat_cycle)) {
+                    if (data.repeat and self.tag_repeat.press(output, tag, output.tag, now, ctx.cfg.tag_repeat_cycle)) {
                         output.cycle_layout(.forward);
                     } else {
                         output.set_tag(tag);

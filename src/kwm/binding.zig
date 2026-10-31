@@ -114,7 +114,14 @@ pub const Action = union(enum) {
     toggle_fullscreen: struct {
         in_window: bool = false,
     },
-    set_output_tag: struct { tag: Tag },
+    set_output_tag: struct {
+        tag: Tag,
+        /// A second set_output_tag to the shown tag, `tag_repeat_cycle`
+        /// milliseconds or less after this one, goes to the next layout.
+        /// The click of a tag in the bar does not count. Refer to
+        /// layout_cycle.zig.
+        repeat: bool = true,
+    },
     set_window_tag: struct { tag: Tag, focus_follow: bool = false },
     toggle_output_tag: struct { mask: u32 },
     toggle_window_tag: struct { mask: u32 },

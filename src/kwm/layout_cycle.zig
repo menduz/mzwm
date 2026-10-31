@@ -5,7 +5,8 @@
 //!   the rules can select them. cycle_layout of output.zig uses `next`.
 //! - A quick second press of the binding of the tag that the output shows
 //!   goes to the next layout (`TagRepeat`). seat.zig uses it for
-//!   set_output_tag.
+//!   set_output_tag, but not for the set_output_tag of a click in the bar
+//!   (`repeat = false`).
 //! - A left click on the tag that the output shows in the bar goes to the
 //!   next layout at once, without a delay. A right click goes to the
 //!   previous layout (`click_direction`). bar.zig uses it.

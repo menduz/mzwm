@@ -17,10 +17,13 @@ set -euo pipefail
 
 TEST_NAME=layout-menu
 
-# config.def.zon with no delay for the tooltip.
-TEST_KWM_CONFIG=$(sed "s|^        .tooltip_delay = 500,|        .tooltip_delay = 0,|" "$TEST_DEFAULT_CONFIG")
-if ! grep -q "^        .tooltip_delay = 0," <<<"$TEST_KWM_CONFIG"; then
-  echo "kwm-test-layout-menu: config.def.zon has no tooltip_delay line" >&2
+# config.def.zon with no delay for the tooltip, and 2 seconds for a second
+# press of a tag key: the helpers of the test need about 800 milliseconds
+# between a click and a key.
+TEST_KWM_CONFIG=$(sed "s|^        .tooltip_delay = 500,|        .tooltip_delay = 0,|; s|^    .tag_repeat_cycle = 500,|    .tag_repeat_cycle = 2000,|" "$TEST_DEFAULT_CONFIG")
+if ! grep -q "^        .tooltip_delay = 0," <<<"$TEST_KWM_CONFIG" ||
+  ! grep -q "^    .tag_repeat_cycle = 2000," <<<"$TEST_KWM_CONFIG"; then
+  echo "kwm-test-layout-menu: config.def.zon has no tooltip_delay or tag_repeat_cycle line" >&2
   exit 1
 fi
 
@@ -207,7 +210,7 @@ expect_mark "2 4 2 / 2 4 2" centered_master
 # Away from the bar. A single press of Super+1 on tag 1 does not change the
 # layout.
 input move 300 400
-sleep 1
+sleep 2.5
 mark_log
 wtype -s 200 -M logo -s 100 1 -s 100 -m logo
 sleep 1
@@ -219,9 +222,10 @@ else
 fi
 expect_mark "2 4 2 / 2 4 2" centered_master
 
-# double: two presses of Super+1, 150 milliseconds between them.
+# double: two presses of Super+1, 150 milliseconds between them, more than
+# tag_repeat_cycle after the last press.
 double() {
-  sleep 1
+  sleep 2.5
   mark_log
   wtype -s 200 -M logo -s 100 1 -s 150 1 -s 100 -m logo
 }
@@ -241,12 +245,22 @@ expect_mark "5 4 / 5" tile
 # Tag 2 does not show. The pointer enters tag 2 (x 20 to 39), and a click
 # shows tag 2. The pointer did not enter a selected tag: no menu, also after
 # a small move in the tag.
+# One press of Super+2 right after the click is not a second press: only
+# the key bindings count for tag_repeat_cycle.
 input move 300 400
 sleep 0.5
 input move 30 7
+mark_log
 input press
 input release
+wtype -s 200 -M logo -s 100 2 -s 100 -m logo
 sleep 0.5
+if tail -n "+$log_start" "$work/river.log" | grep -q "set layout to"; then
+  echo "FAIL: one press of Super+2 after a click on tag 2 changes no layout"
+  failed=1
+else
+  echo "ok: one press of Super+2 after a click on tag 2 changes no layout"
+fi
 input move 31 7
 sleep 0.5
 expect_menu no "a click that selects a tag does not show the menu"
@@ -264,6 +278,13 @@ mark_log
 input press right
 input release right
 expect_layout tile "a right click on the shown tag goes to the previous layout"
+
+# The menu shows on tag 2. Super+1 unselects tag 2, and the pointer does not
+# move: the menu goes away.
+expect_menu yes "the menu shows after the right click"
+wtype -s 200 -M logo -s 100 1 -s 100 -m logo
+sleep 0.5
+expect_menu no "the menu goes away when a key unselects the tag, without a move of the pointer"
 
 if grep -q "panic" "$work/river.log"; then
   echo "FAIL: kwm runs ($(grep -m1 panic "$work/river.log"))"
