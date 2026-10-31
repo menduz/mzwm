@@ -1,7 +1,8 @@
 //! The mark of a selected tag in the bar, in the place of the label. The
 //! shape of the mark shows the layout of the tag (`Shape`):
 //! - monocle: a square.
-//! - tile: two columns, 0.6 and 0.4 of the width.
+//! - tile: two columns, 0.6 and 0.4 of the width. The second column (the
+//!   stack) has two windows of the same height.
 //! - centered master: three columns, 0.2, 0.6 and 0.2 of the width.
 //! - float: two windows, the front window at the bottom right, as the
 //!   restore button of a title bar of Windows 98.
@@ -49,7 +50,7 @@ pub const Shape = union(enum) {
     /// The monocle layout, and the layouts without a shape of their own.
     square,
     /// The tile layout: the master area (0.6) on its side, and the stack
-    /// (0.4).
+    /// (0.4) of two windows.
     tile: Side,
     /// The centered master layout: the master area (0.6) between two
     /// stacks (0.2).
@@ -73,20 +74,30 @@ pub fn covers(shape_: Shape, side: i32, gap: i32, x: i32, y: i32) bool {
         .square => true,
         .tile => |master| {
             // The parts are columns. For rows, turn the mark.
-            const along = switch (master) {
-                .left, .right => x,
-                .top, .bottom => y,
+            const along, const across = switch (master) {
+                .left, .right => .{ x, y },
+                .top, .bottom => .{ y, x },
             };
             const free = side - gap;
             const master_len = round_fraction(free, 6);
-            const first: i32 = switch (master) {
+            const first: Part = .{ .start = 0, .len = switch (master) {
                 .left, .top => master_len,
                 .right, .bottom => free - master_len,
+            } };
+            const second: Part = .{ .start = first.len + gap, .len = free - first.len };
+            const master_part, const stack = switch (master) {
+                .left, .top => .{ first, second },
+                .right, .bottom => .{ second, first },
             };
+            if (in_parts(&.{master_part}, along)) return true;
+            if (!in_parts(&.{stack}, along)) return false;
+            // The stack has two windows of the same size. The gap between
+            // them gets the odd pixel.
+            const half = @divFloor(side - gap, 2);
             return in_parts(&.{
-                .{ .start = 0, .len = first },
-                .{ .start = first + gap, .len = free - first },
-            }, along);
+                .{ .start = 0, .len = half },
+                .{ .start = side - half, .len = half },
+            }, across);
         },
         .centered => |axis| {
             const along = switch (axis) {
@@ -184,19 +195,27 @@ test "covers: the monocle layout, a square with square corners" {
     });
 }
 
-test "covers: the tile layout, two columns of 0.6 and 0.4" {
+test "covers: the tile layout, two columns of 0.6 and 0.4, two windows in the stack" {
+    // The two windows of the stack have 4 rows. The gap between them gets
+    // the odd pixel.
     try expect_mark(10, .{ .tile = .left }, 1, &.{
         "#####.####",
         "#####.####",
         "#####.####",
         "#####.####",
-        "#####.####",
-        "#####.####",
+        "#####.....",
+        "#####.....",
         "#####.####",
         "#####.####",
         "#####.####",
         "#####.####",
     });
+    // At scale 2: windows of 9 rows, and a gap of 2 rows.
+    const got = mark_rows(20, .{ .tile = .left }, 2);
+    try testing.expectEqualStrings("###########..#######", &got[8]);
+    try testing.expectEqualStrings("###########.........", &got[9]);
+    try testing.expectEqualStrings("###########.........", &got[10]);
+    try testing.expectEqualStrings("###########..#######", &got[11]);
 }
 
 test "covers: the master area at the right, and at the top" {
@@ -205,8 +224,8 @@ test "covers: the master area at the right, and at the top" {
         "####.#####",
         "####.#####",
         "####.#####",
-        "####.#####",
-        "####.#####",
+        ".....#####",
+        ".....#####",
         "####.#####",
         "####.#####",
         "####.#####",
@@ -219,10 +238,10 @@ test "covers: the master area at the right, and at the top" {
         "##########",
         "##########",
         "..........",
-        "##########",
-        "##########",
-        "##########",
-        "##########",
+        "####..####",
+        "####..####",
+        "####..####",
+        "####..####",
     });
 }
 
