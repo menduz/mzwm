@@ -66,10 +66,14 @@ pub const Clock = clickable(struct {
 });
 
 pub const Disk = clickable(struct {
-    path: [:0]const u8 = "/",
-    /// Show the widget when this percentage of the disk is used, or more.
+    /// A path in the file system to read. null: all the file systems on
+    /// local SSD and NVMe disks (no USB disks). Refer to
+    /// src/kwm/widgets/storage.zig.
+    path: ?[:0]const u8 = null,
+    /// Show the widget when this percentage of a disk is used, or more.
     show: u8 = 0,
-    /// Show the widget in the critical color when fewer bytes are free.
+    /// Show the widget in the critical color when fewer bytes are free on a
+    /// disk.
     alert: u64 = 0,
     interval: u32 = 30_000,
 });

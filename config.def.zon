@@ -187,8 +187,9 @@
         .right = .{
             // shown on battery and while charging, % below 100%
             .{ .battery = .{ .warning = 20, .critical = 10 } },
-            // shown at 80% used, in the critical color below 10 GB free
-            .{ .disk = .{ .path = "/", .show = 80, .alert = 10000000000 } },
+            // the local SSD and NVMe disks (no .path): the smallest free space, a tooltip line for each disk;
+            // shown when a disk is 80% used, in the critical color below 10 GB free
+            .{ .disk = .{ .show = 80, .alert = 10000000000 } },
         },
         // at the right of the tray
         .end = .{
