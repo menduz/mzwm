@@ -8,6 +8,8 @@
 //!   becomes tiled (`drag.tile_edge`). The edge on the side of the master
 //!   area gives a master window. The opposite edge gives a window at the top
 //!   of the stack. Refer to nmaster.zig for the number of master windows.
+//! - A floating window that the pointer releases on the bar of its output
+//!   becomes a master window, as at the edge of the master area.
 //! - While the pointer is at such an edge, the layout shows the other
 //!   windows in their places after the drop, and a placeholder shows the
 //!   place of the window (drop_preview.zig).
@@ -69,6 +71,35 @@ pub fn place(side: MasterLocation, master: MasterLocation) ?Place {
     if (side == master) return .master;
     if (side == opposite(master)) return .stack;
     return null;
+}
+
+
+/// True when the pointer (`x`, `y`) is in `area`.
+pub fn contains(area: Area, x: i32, y: i32) bool {
+    return x >= area.x and x < area.x + area.width
+        and y >= area.y and y < area.y + area.height;
+}
+
+
+/// The place of a floating window that the pointer releases at (`x`, `y`),
+/// on an output with the area `output` and a layout with its master area at
+/// `master`. `bar` is the area of the bar of the output, null when the
+/// output shows no bar. On the bar, the window becomes a master window. The
+/// bar comes before the edges: the left and right ends of the bar also give
+/// a master window. Else refer to `edge` and `place`. null: the window stays
+/// floating. `distance` null: all windows stay floating.
+pub fn drop_place(
+    x: i32,
+    y: i32,
+    output: Area,
+    bar: ?Area,
+    distance: ?i32,
+    master: MasterLocation,
+) ?Place {
+    if (distance == null) return null;
+    if (bar) |b| if (contains(b, x, y)) return .master;
+    const side = edge(x, y, output, distance) orelse return null;
+    return place(side, master);
 }
 
 
@@ -204,6 +235,44 @@ test "place: the master side gives a master, the opposite side the stack" {
     try testing.expectEqual(@as(?Place, .master), place(.top, .top));
     try testing.expectEqual(@as(?Place, .stack), place(.bottom, .top));
     try testing.expectEqual(@as(?Place, null), place(.left, .top));
+}
+
+test "drop_place: the bar gives a master window" {
+    const output: Area = .{ .x = 1920, .y = 0, .width = 1920, .height = 1080 };
+    const top_bar: Area = .{ .x = 1920, .y = 0, .width = 1920, .height = 24 };
+    // The middle of the bar. Without the bar, the top edge in a layout with
+    // the master area at the left gives no place.
+    try testing.expectEqual(@as(?Place, .master), drop_place(2500, 12, output, top_bar, 8, .left));
+    try testing.expectEqual(@as(?Place, null), drop_place(2500, 4, output, null, 8, .left));
+    // The bottom row of the bar, and the row below it.
+    try testing.expectEqual(@as(?Place, .master), drop_place(2500, 23, output, top_bar, 8, .left));
+    try testing.expectEqual(@as(?Place, null), drop_place(2500, 24, output, top_bar, 8, .left));
+    // The right end of the bar: a master window, not the stack.
+    try testing.expectEqual(@as(?Place, .master), drop_place(3839, 12, output, top_bar, 8, .left));
+    // The bar also comes before the side of the stack in other layouts.
+    try testing.expectEqual(@as(?Place, .master), drop_place(2500, 12, output, top_bar, 8, .bottom));
+}
+
+test "drop_place: the edges below the bar, a bar at the bottom, and no distance" {
+    const output: Area = .{ .x = 0, .y = 0, .width = 1920, .height = 1080 };
+    const bottom_bar: Area = .{ .x = 0, .y = 1056, .width = 1920, .height = 24 };
+    try testing.expectEqual(@as(?Place, .master), drop_place(0, 500, output, bottom_bar, 8, .left));
+    try testing.expectEqual(@as(?Place, .stack), drop_place(1919, 500, output, bottom_bar, 8, .left));
+    try testing.expectEqual(@as(?Place, .master), drop_place(900, 1070, output, bottom_bar, 8, .left));
+    try testing.expectEqual(@as(?Place, null), drop_place(900, 500, output, bottom_bar, 8, .left));
+    // A pointer below the output is not on its bar.
+    try testing.expectEqual(@as(?Place, null), drop_place(900, 1100, output, bottom_bar, 8, .left));
+    // No distance: the window stays floating, also on the bar.
+    try testing.expectEqual(@as(?Place, null), drop_place(900, 1070, output, bottom_bar, null, .left));
+}
+
+test "contains: the right and bottom ends are out" {
+    const area: Area = .{ .x = 10, .y = 20, .width = 5, .height = 3 };
+    try testing.expect(contains(area, 10, 20));
+    try testing.expect(contains(area, 14, 22));
+    try testing.expect(!contains(area, 15, 22));
+    try testing.expect(!contains(area, 14, 23));
+    try testing.expect(!contains(area, 9, 20));
 }
 
 test "placeholder: the slot and the border, in the coordinates of the compositor" {

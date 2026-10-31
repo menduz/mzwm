@@ -78,8 +78,9 @@ pub const Config = struct {
         /// A floating window that the pointer releases this distance or less
         /// from an edge of the output becomes tiled, in logical pixels. The
         /// edge on the side of the master area gives a master window, and
-        /// the opposite edge a window at the top of the stack. null: the
-        /// window stays floating.
+        /// the opposite edge a window at the top of the stack. The bar of
+        /// the output also gives a master window. null: the window stays
+        /// floating, also on the bar.
         tile_edge: ?i32 = 8,
         /// While the pointer is at such an edge, the other windows show their
         /// places after the drop, and a rectangle shows the place of the

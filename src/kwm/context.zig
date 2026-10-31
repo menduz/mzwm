@@ -824,8 +824,8 @@ pub const DropTarget = struct {
 
 
 /// The drop target of the floating window `window` with the pointer at
-/// (`x`, `y`), in the coordinates of the compositor: an edge of its output.
-/// null: the window stays floating.
+/// (`x`, `y`), in the coordinates of the compositor: the bar or an edge of
+/// its output. null: the window stays floating.
 pub fn drop_target(self: *Self, window: *Window, x: i32, y: i32) ?DropTarget {
     if (window.managed_by_layout()) return null;
     if (window.maximize or window.fullscreen != .none) return null;
@@ -833,19 +833,37 @@ pub fn drop_target(self: *Self, window: *Window, x: i32, y: i32) ?DropTarget {
     const layout = output.current_layout();
     if (layout == .float) return null;
 
-    const side = drag_zig.edge(x, y, .{
-        .x = output.x,
-        .y = output.y,
-        .width = output.width,
-        .height = output.height,
-    }, self.cfg.drag.tile_edge) orelse return null;
     const master_location: types.LayoutMasterLocation = switch (layout) {
         .tile => |tile| tile.master_location,
         .deck => |deck| deck.master_location,
         else => .left,
     };
-    const place = drag_zig.place(side, master_location) orelse return null;
+    const place = drag_zig.drop_place(x, y, .{
+        .x = output.x,
+        .y = output.y,
+        .width = output.width,
+        .height = output.height,
+    }, bar_area(output), self.cfg.drag.tile_edge, master_location) orelse return null;
     return .{ .output = output, .place = place };
+}
+
+
+/// The area of the bar of `output`, in the coordinates of the compositor.
+/// null: the output shows no bar.
+fn bar_area(output: *Output) ?drag_zig.Area {
+    if (comptime build_options.bar_enabled) {
+        if (output.bar.hidden) return null;
+        const height = output.bar.height(true);
+        return .{
+            .x = output.x,
+            .y = switch (ctx.cfg.bar.position) {
+                .top => output.y,
+                .bottom => output.y + output.height - height,
+            },
+            .width = output.width,
+            .height = height,
+        };
+    } else return null;
 }
 
 

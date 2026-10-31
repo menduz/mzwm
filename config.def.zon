@@ -298,8 +298,8 @@
         // distance in logical pixels, null keeps it tiled
         .float_distance = 32,
         // a floating window that the pointer releases this near an edge of the output
-        // becomes tiled: a master at the edge of the master area, else the top of the
-        // stack; null keeps it floating
+        // becomes tiled: a master at the edge of the master area or on the bar, else the
+        // top of the stack; null keeps it floating
         .tile_edge = 8,
         // at such an edge, the other windows show their places after the drop, and a
         // rectangle (a fill and an outline) shows the place of the window; null: no preview
