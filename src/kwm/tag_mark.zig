@@ -2,7 +2,7 @@
 //! shape of the mark shows the layout of the tag (`Shape`):
 //! - monocle: a square.
 //! - tile: two columns, 0.6 and 0.4 of the width. The second column (the
-//!   stack) has two windows of the same height.
+//!   stack) has three windows, one gap apart.
 //! - centered master: three columns, 0.2, 0.6 and 0.2 of the width.
 //! - float: two windows, the front window at the bottom right, as the
 //!   restore button of a title bar of Windows 98.
@@ -50,7 +50,7 @@ pub const Shape = union(enum) {
     /// The monocle layout, and the layouts without a shape of their own.
     square,
     /// The tile layout: the master area (0.6) on its side, and the stack
-    /// (0.4) of two windows.
+    /// (0.4) of three windows.
     tile: Side,
     /// The centered master layout: the master area (0.6) between two
     /// stacks (0.2).
@@ -91,12 +91,15 @@ pub fn covers(shape_: Shape, side: i32, gap: i32, x: i32, y: i32) bool {
             };
             if (in_parts(&.{master_part}, along)) return true;
             if (!in_parts(&.{stack}, along)) return false;
-            // The stack has two windows of the same size. The gap between
-            // them gets the odd pixel.
-            const half = @divFloor(side - gap, 2);
+            // The stack has three windows, one gap apart. The pixels that
+            // do not divide by three go to the windows at the ends (two
+            // pixels) or to the middle window (one pixel).
+            const free_across = side - 2 * gap;
+            const end = @divFloor(free_across, 3) + @as(i32, if (@mod(free_across, 3) == 2) 1 else 0);
             return in_parts(&.{
-                .{ .start = 0, .len = half },
-                .{ .start = side - half, .len = half },
+                .{ .start = 0, .len = end },
+                .{ .start = end + gap, .len = free_across - 2 * end },
+                .{ .start = side - end, .len = end },
             }, across);
         },
         .centered => |axis| {
@@ -195,27 +198,28 @@ test "covers: the monocle layout, a square with square corners" {
     });
 }
 
-test "covers: the tile layout, two columns of 0.6 and 0.4, two windows in the stack" {
-    // The two windows of the stack have 4 rows. The gap between them gets
-    // the odd pixel.
+test "covers: the tile layout, two columns of 0.6 and 0.4, three windows in the stack" {
+    // The windows of the stack have 3, 2 and 3 rows, with gaps of 1 row.
     try expect_mark(10, .{ .tile = .left }, 1, &.{
         "#####.####",
         "#####.####",
         "#####.####",
-        "#####.####",
-        "#####.....",
         "#####.....",
         "#####.####",
+        "#####.####",
+        "#####.....",
         "#####.####",
         "#####.####",
         "#####.####",
     });
-    // At scale 2: windows of 9 rows, and a gap of 2 rows.
+    // At scale 2: windows of 5, 6 and 5 rows, with gaps of 2 rows.
     const got = mark_rows(20, .{ .tile = .left }, 2);
-    try testing.expectEqualStrings("###########..#######", &got[8]);
-    try testing.expectEqualStrings("###########.........", &got[9]);
-    try testing.expectEqualStrings("###########.........", &got[10]);
-    try testing.expectEqualStrings("###########..#######", &got[11]);
+    const window = "###########..#######";
+    const gap = "###########.........";
+    for (got, 0..) |row, i| {
+        const in_gap = (i >= 5 and i < 7) or (i >= 13 and i < 15);
+        try testing.expectEqualStrings(if (in_gap) gap else window, &row);
+    }
 }
 
 test "covers: the master area at the right, and at the top" {
@@ -223,10 +227,10 @@ test "covers: the master area at the right, and at the top" {
         "####.#####",
         "####.#####",
         "####.#####",
-        "####.#####",
-        ".....#####",
         ".....#####",
         "####.#####",
+        "####.#####",
+        ".....#####",
         "####.#####",
         "####.#####",
         "####.#####",
@@ -238,10 +242,10 @@ test "covers: the master area at the right, and at the top" {
         "##########",
         "##########",
         "..........",
-        "####..####",
-        "####..####",
-        "####..####",
-        "####..####",
+        "###.##.###",
+        "###.##.###",
+        "###.##.###",
+        "###.##.###",
     });
 }
 

@@ -37,9 +37,10 @@ open b
 expect_state a " tiled=1 " "window a is tiled"
 expect_state b " tiled=1 " "window b is tiled"
 
-# mark <png> [name]: the widths of the runs of pixels of the mark in its top
-# row and in its middle row, for example "5 4 / 5" for two columns with two
-# windows in the second column. The mark is in the cell of
+# mark <png> [name]: the lengths of the runs of pixels of the mark in its top
+# row, in its middle row and in its right column, for example "5 4 / 5 4 /
+# 3 2 3" for two columns with three windows in the second column. The mark
+# is in the cell of
 # tag 1, at the left end of the bar. With a name and TEST_SCREENSHOT_DIR,
 # also write the mark 8 times larger.
 mark() {
@@ -57,16 +58,18 @@ if not points:
     sys.exit()
 x0, x1 = min(p[0] for p in points), max(p[0] for p in points)
 y0, y1 = min(p[1] for p in points), max(p[1] for p in points)
-def runs(row):
+def runs(points):
     result, n = [], 0
-    for x in range(x0, x1 + 2):
-        if x <= x1 and pixels[x, row] != bg:
+    for p in points + [None]:
+        if p is not None and pixels[p] != bg:
             n += 1
         elif n:
             result.append(n)
             n = 0
     return " ".join(map(str, result))
-print(runs(y0), "/", runs((y0 + y1) // 2))
+def row(y):
+    return runs([(x, y) for x in range(x0, x1 + 1)])
+print(row(y0), "/", row((y0 + y1) // 2), "/", runs([(x1, y) for y in range(y0, y1 + 1)]))
 name, out = sys.argv[2], sys.argv[3]
 if name and out:
     crop = image.crop((0, 0, 20, y1 + 3))
@@ -86,7 +89,7 @@ expect_mark() {
   if [ "$got" = "$1" ]; then
     echo "ok: the mark of tag 1 shows the $2 layout ($got)"
   else
-    echo "FAIL: the mark of tag 1 shows the $2 layout (top row / middle row: $got, expected: $1)"
+    echo "FAIL: the mark of tag 1 shows the $2 layout (top row / middle row / right column: $got, expected: $1)"
     failed=1
   fi
 }
@@ -112,8 +115,8 @@ expect_layout() {
 }
 
 # The font of the bar is Terminus of 12 pixels: the mark has 10 pixels. The
-# middle row of the tile mark is in the gap between the windows of the stack.
-expect_mark "5 4 / 5" tile
+# windows of the stack of the tile mark have 3, 2 and 3 pixels.
+expect_mark "5 4 / 5 4 / 3 2 3" tile
 
 # menu_box <png>: "left top right bottom" of the menu below the bar, or
 # "none none none none". The menu has the background of the bar, the windows
@@ -185,7 +188,7 @@ PY
   input press
   input release
   expect_layout monocle "a click on a line of the menu selects the layout"
-  expect_mark "10 / 10" monocle
+  expect_mark "10 / 10 / 10" monocle
 fi
 
 # A click on the selected tag goes to the next layout at once, also a second
@@ -197,7 +200,7 @@ input press
 input release
 expect_layout tile "a click on the selected tag goes to the next layout"
 input move 300 400
-expect_mark "5 4 / 5" tile
+expect_mark "5 4 / 5 4 / 3 2 3" tile
 input move 9 7
 sleep 1
 mark_log
@@ -205,7 +208,7 @@ input press
 input release
 expect_layout centered_master "a second click one second later goes to the next layout"
 input move 300 400
-expect_mark "2 4 2 / 2 4 2" centered_master
+expect_mark "2 4 2 / 2 4 2 / 10" centered_master
 
 # Away from the bar. A single press of Super+1 on tag 1 does not change the
 # layout.
@@ -220,7 +223,7 @@ if tail -n "+$log_start" "$work/river.log" | grep -q "set layout to"; then
 else
   echo "ok: a single press of Super+1 on tag 1 does not change the layout"
 fi
-expect_mark "2 4 2 / 2 4 2" centered_master
+expect_mark "2 4 2 / 2 4 2 / 10" centered_master
 
 # double: two presses of Super+1, 150 milliseconds between them, more than
 # tag_repeat_cycle after the last press.
@@ -233,14 +236,15 @@ double() {
 double
 expect_layout float "a quick second press of Super+1 goes to the float layout"
 # The float mark: the title bar of the window behind; in the middle row, the
-# left line of the window behind and the title bar of the front window.
-expect_mark "7 / 1 7" float
+# left line of the window behind and the title bar of the front window; the
+# right line of the front window.
+expect_mark "7 / 1 7 / 7" float
 double
 expect_layout monocle "a quick second press of Super+1 goes to the monocle layout"
-expect_mark "10 / 10" monocle
+expect_mark "10 / 10 / 10" monocle
 double
 expect_layout tile "a quick second press of Super+1 goes from the last layout to the first layout"
-expect_mark "5 4 / 5" tile
+expect_mark "5 4 / 5 4 / 3 2 3" tile
 
 # Tag 2 does not show. The pointer enters tag 2 (x 20 to 39), and a click
 # shows tag 2. The pointer did not enter a selected tag: no menu, also after
