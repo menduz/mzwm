@@ -1,12 +1,16 @@
 //! The mark of a selected tag in the bar, in the place of the label. The
 //! shape of the mark shows the layout of the tag (`Shape`):
-//! - monocle: a square.
+//! - monocle: a window with a title bar of two lines and a frame of one
+//!   line, as the maximize button of a title bar of Windows 98.
 //! - tile: two columns, 0.6 and 0.4 of the width. The second column (the
 //!   stack) has three windows, one gap apart; the last window is the
 //!   smallest.
 //! - centered master: three columns, 0.2, 0.6 and 0.2 of the width.
 //! - float: two windows, the front window at the bottom right, as the
 //!   restore button of a title bar of Windows 98.
+//!
+//! - grid, scroller, and all the layouts when the bar does not show the
+//!   layout: a square.
 //!
 //! The corners are square.
 //!
@@ -48,8 +52,10 @@ pub const Axis = enum { horizontal, vertical };
 
 /// The shape of the mark: the layout of the tag.
 pub const Shape = union(enum) {
-    /// The monocle layout, and the layouts without a shape of their own.
+    /// The layouts without a shape of their own: a full square.
     square,
+    /// The monocle layout: one window that fills the output.
+    maximized,
     /// The tile layout: the master area (0.6) on its side, and the stack
     /// (0.4) of three windows.
     tile: Side,
@@ -73,6 +79,7 @@ pub fn covers(shape_: Shape, side: i32, gap: i32, x: i32, y: i32) bool {
     if (x < 0 or y < 0 or x >= side or y >= side) return false;
     return switch (shape_) {
         .square => true,
+        .maximized => on_frame(side, gap, x, y),
         .tile => |master| {
             // The parts are columns. For rows, turn the mark.
             const along, const across = switch (master) {
@@ -188,7 +195,26 @@ fn expect_mark(comptime size: i32, shape_: Shape, gap: i32, expected: []const []
     }
 }
 
-test "covers: the monocle layout, a square with square corners" {
+test "covers: the monocle layout, a window with a title bar of two lines and a frame of one line" {
+    try expect_mark(8, .maximized, 1, &.{
+        "########",
+        "########",
+        "#......#",
+        "#......#",
+        "#......#",
+        "#......#",
+        "#......#",
+        "########",
+    });
+    // At scale 2: a title bar of four lines and a frame of two lines.
+    const got = mark_rows(10, .maximized, 2);
+    try testing.expectEqualStrings("##########", &got[3]);
+    try testing.expectEqualStrings("##......##", &got[4]);
+    try testing.expectEqualStrings("##......##", &got[7]);
+    try testing.expectEqualStrings("##########", &got[8]);
+}
+
+test "covers: the layouts without a shape of their own, a full square" {
     try expect_mark(8, .square, 1, &.{
         "########",
         "########",
@@ -295,7 +321,7 @@ test "covers: the float layout, the front window at the bottom right covers the 
 }
 
 test "covers: no pixel out of the mark" {
-    inline for (.{ Shape.square, Shape{ .tile = .left }, Shape{ .centered = .horizontal }, Shape.float }) |s| {
+    inline for (.{ Shape.square, Shape.maximized, Shape{ .tile = .left }, Shape{ .centered = .horizontal }, Shape.float }) |s| {
         try testing.expect(!covers(s, 10, 1, -1, 5));
         try testing.expect(!covers(s, 10, 1, 10, 5));
         try testing.expect(!covers(s, 10, 1, 5, 10));

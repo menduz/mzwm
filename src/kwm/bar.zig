@@ -22,7 +22,6 @@ const render_ = @import("render.zig");
 const sandbox = @import("sandbox.zig");
 const decoration = @import("decoration.zig");
 const tag_mark = @import("tag_mark.zig");
-const layout_cycle = @import("layout_cycle.zig");
 const tag_menu_zig = @import("tag_menu.zig");
 const bar_update = @import("bar_update.zig");
 const binding = @import("binding.zig");
@@ -192,24 +191,19 @@ pub fn handle_click(self: *Self, seat: *Seat) void {
                         tag_menu.click(.{ .owner = self, .index = i }, self.output.tag & tag != 0);
                         seat.hover_widget();
                     }
-                    // A left click on the shown tag goes to the next layout
-                    // at once, a right click to the previous layout. Refer
-                    // to layout_cycle.zig.
-                    const button: layout_cycle.Button = switch (seat.button) {
+                    // A left or right click on the shown tag only shows the
+                    // menu. Refer to tag_menu.zig.
+                    const button: tag_menu_zig.Button = switch (seat.button) {
                         .left => .left,
                         .right => .right,
                         else => .other,
                     };
-                    if (layout_cycle.click_direction(area.layout, button, tag, self.output.tag)) |forward| {
-                        action = .{ .cycle_layout = .{ .direction = if (forward) .forward else .reverse } };
-                        break;
-                    }
+                    if (tag_menu_zig.only_shows_menu(area.layout, button, tag, self.output.tag)) break;
                     const callback_action = area.click.getter.get(seat.button) orelse return;
                     action = switch (callback_action) {
                         .set_window_tag => .{ .set_window_tag = .{ .tag = .{ .tag = tag } } },
                         .toggle_window_tag => .{ .toggle_window_tag = .{ .mask = tag } },
-                        // Only a key binding makes a quick second press.
-                        .set_output_tag => .{ .set_output_tag = .{ .tag = .{ .tag = tag }, .repeat = false } },
+                        .set_output_tag => .{ .set_output_tag = .{ .tag = .{ .tag = tag } } },
                         .toggle_output_tag => .{ .toggle_output_tag = .{ .mask = tag } },
                         else => callback_action,
                     };
@@ -790,7 +784,8 @@ pub fn layout_shape(output: *const Output, layout: Layout.Type) tag_mark.Shape {
             inline else => |d| @field(tag_mark.Axis, @tagName(d)),
         } },
         .float => .float,
-        .monocle, .grid, .scroller => .square,
+        .monocle => .maximized,
+        .grid, .scroller => .square,
     };
 }
 

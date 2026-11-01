@@ -1,12 +1,11 @@
 # Tests the layout of the selected tag: the mark of the selected tag shows
 # the layout, the pointer on the selected tag shows the menu of the layouts,
-# a click on a line of the menu selects the layout, a click on the selected
-# tag goes to the next layout at once, and a quick second press of Super+1
-# on tag 1 goes to the next layout. The menu shows only when the pointer
-# enters a selected tag, or at a click on a selected tag. A right click on
-# the selected tag goes to the previous layout. Run it with the environment of
-# `kwm-test-layout-menu` in tests.nix. Refer to src/kwm/tag_mark.zig and
-# src/kwm/layout_cycle.zig.
+# and a click on a line of the menu selects the layout. The menu shows only
+# when the pointer enters a selected tag, or at a click on a selected tag. A
+# left or right click on the selected tag only shows the menu, and a quick
+# second press of Super+1 on tag 1 does not change the layout. Run it with
+# the environment of `kwm-test-layout-menu` in tests.nix. Refer to
+# src/kwm/tag_mark.zig and src/kwm/tag_menu.zig.
 #
 # Usage: kwm-test-layout-menu
 #
@@ -17,13 +16,10 @@ set -euo pipefail
 
 TEST_NAME=layout-menu
 
-# config.def.zon with no delay for the tooltip, and 2 seconds for a second
-# press of a tag key: the helpers of the test need about 800 milliseconds
-# between a click and a key.
-TEST_KWM_CONFIG=$(sed "s|^        .tooltip_delay = 500,|        .tooltip_delay = 0,|; s|^    .tag_repeat_cycle = 500,|    .tag_repeat_cycle = 2000,|" "$TEST_DEFAULT_CONFIG")
-if ! grep -q "^        .tooltip_delay = 0," <<<"$TEST_KWM_CONFIG" ||
-  ! grep -q "^    .tag_repeat_cycle = 2000," <<<"$TEST_KWM_CONFIG"; then
-  echo "kwm-test-layout-menu: config.def.zon has no tooltip_delay or tag_repeat_cycle line" >&2
+# config.def.zon with no delay for the tooltip.
+TEST_KWM_CONFIG=$(sed "s|^        .tooltip_delay = 500,|        .tooltip_delay = 0,|" "$TEST_DEFAULT_CONFIG")
+if ! grep -q "^        .tooltip_delay = 0," <<<"$TEST_KWM_CONFIG"; then
+  echo "kwm-test-layout-menu: config.def.zon has no tooltip_delay line" >&2
   exit 1
 fi
 
@@ -99,6 +95,17 @@ expect_mark() {
 log_start=1
 mark_log() {
   log_start=$(($(wc -l <"$work/river.log") + 1))
+}
+
+# expect_no_layout <description>: kwm sets no layout after mark_log.
+expect_no_layout() {
+  sleep 1
+  if tail -n "+$log_start" "$work/river.log" | grep -q "set layout to"; then
+    echo "FAIL: $1 ($(tail -n "+$log_start" "$work/river.log" | grep -m1 "set layout to"))"
+    failed=1
+  else
+    echo "ok: $1"
+  fi
 }
 
 # expect_layout <layout> <description>: kwm sets the layout.
@@ -188,69 +195,42 @@ PY
   input press
   input release
   expect_layout monocle "a click on a line of the menu selects the layout"
-  expect_mark "10 / 10 / 10" monocle
+  # The monocle mark: a window with a title bar of two lines and a frame of
+  # one line.
+  expect_mark "10 / 1 1 / 10" monocle
 fi
 
-# A click on the selected tag goes to the next layout at once, also a second
-# click one second later. grim shows the cursor: the pointer goes away from
-# the mark before expect_mark.
+# A left or right click on the selected tag only shows the menu: the layout
+# stays. grim shows the cursor: the pointer goes away from the mark before
+# expect_mark.
 input move 9 7
 mark_log
 input press
 input release
-expect_layout tile "a click on the selected tag goes to the next layout"
-input move 300 400
-expect_mark "5 4 / 5 4 / 3 3 2" tile
-input move 9 7
-sleep 1
+expect_no_layout "a left click on the selected tag does not change the layout"
+expect_menu yes "a left click on the selected tag shows the menu"
 mark_log
-input press
-input release
-expect_layout centered_master "a second click one second later goes to the next layout"
+input press right
+input release right
+expect_no_layout "a right click on the selected tag does not change the layout"
 input move 300 400
-expect_mark "2 4 2 / 2 4 2 / 10" centered_master
+expect_mark "10 / 1 1 / 10" monocle
 
-# Away from the bar. A single press of Super+1 on tag 1 does not change the
-# layout.
-input move 300 400
-sleep 2.5
+# Away from the bar. A single press of Super+1 on tag 1, and two quick
+# presses, do not change the layout.
+sleep 0.5
 mark_log
 wtype -s 200 -M logo -s 100 1 -s 100 -m logo
-sleep 1
-if tail -n "+$log_start" "$work/river.log" | grep -q "set layout to"; then
-  echo "FAIL: a single press of Super+1 on tag 1 does not change the layout"
-  failed=1
-else
-  echo "ok: a single press of Super+1 on tag 1 does not change the layout"
-fi
-expect_mark "2 4 2 / 2 4 2 / 10" centered_master
-
-# double: two presses of Super+1, 150 milliseconds between them, more than
-# tag_repeat_cycle after the last press.
-double() {
-  sleep 2.5
-  mark_log
-  wtype -s 200 -M logo -s 100 1 -s 150 1 -s 100 -m logo
-}
-
-double
-expect_layout float "a quick second press of Super+1 goes to the float layout"
-# The float mark: the title bar of the window behind; in the middle row, the
-# left line of the window behind and the title bar of the front window; the
-# right line of the front window.
-expect_mark "7 / 1 7 / 7" float
-double
-expect_layout monocle "a quick second press of Super+1 goes to the monocle layout"
-expect_mark "10 / 10 / 10" monocle
-double
-expect_layout tile "a quick second press of Super+1 goes from the last layout to the first layout"
-expect_mark "5 4 / 5 4 / 3 3 2" tile
+expect_no_layout "a single press of Super+1 on tag 1 does not change the layout"
+mark_log
+wtype -s 200 -M logo -s 100 1 -s 150 1 -s 100 -m logo
+expect_no_layout "a quick second press of Super+1 on tag 1 does not change the layout"
+expect_mark "10 / 1 1 / 10" monocle
 
 # Tag 2 does not show. The pointer enters tag 2 (x 20 to 39), and a click
 # shows tag 2. The pointer did not enter a selected tag: no menu, also after
-# a small move in the tag.
-# One press of Super+2 right after the click is not a second press: only
-# the key bindings count for tag_repeat_cycle.
+# a small move in the tag. A press of Super+2 right after the click does not
+# change the layout.
 input move 300 400
 sleep 0.5
 input move 30 7
@@ -271,7 +251,7 @@ expect_menu no "a click that selects a tag does not show the menu"
 mark_log
 input press
 input release
-expect_layout centered_master "a click on the shown tag 2 goes to the next layout"
+expect_no_layout "a click on the shown tag 2 does not change the layout"
 expect_menu yes "a second click in the same place shows the menu"
 input move 300 400
 sleep 0.6
@@ -281,7 +261,7 @@ expect_menu yes "the pointer that comes back shows the menu"
 mark_log
 input press right
 input release right
-expect_layout tile "a right click on the shown tag goes to the previous layout"
+expect_no_layout "a right click on the shown tag 2 does not change the layout"
 
 # The menu shows on tag 2. Super+1 unselects tag 2, and the pointer does not
 # move: the menu goes away.

@@ -67,11 +67,11 @@
             // text color of tags without windows, null to use the scheme color
             .empty_fg = 0x1d2023ff,
             // the mark of a selected tag shows the layout: two columns (tile), three
-            // columns (centered master), two windows (float) or a square (monocle);
-            // the pointer that enters a selected tag (or a click on it) shows the menu of
-            // the layouts of `cycle_layouts`, and a click on a line selects the layout;
-            // a left click on the shown tag goes to the next layout at once, a right
-            // click to the previous layout
+            // columns (centered master), two windows (float) or a window with a title
+            // bar (monocle, as the maximize button of Windows 98); the pointer that
+            // enters a selected tag (or a click on it) shows the menu of the layouts of
+            // `cycle_layouts`, and a click on a line selects the layout; a left or right
+            // click on the shown tag only shows the menu
             // false: a square, no menu, and the clicks below
             .layout = true,
 
@@ -422,14 +422,10 @@
     // .centered_master
     // .float
     .default_layout = .tile,
-    // the layouts of cycle_layout, of a quick second press of a tag key and of the menu
-    // of the selected tag, in this order; the other layouts stay, and switch_layout,
-    // default_layout and the rules can select them
+    // the layouts of cycle_layout and of the menu of the selected tag, in this order;
+    // the other layouts stay, and switch_layout, default_layout and the rules can
+    // select them
     .cycle_layouts = .{ .tile, .centered_master, .float, .monocle },
-    // a second set_output_tag to the shown tag in this many milliseconds goes to the
-    // next layout of `cycle_layouts` (a click on the shown tag in the bar does not
-    // wait for a second click); null: no change
-    .tag_repeat_cycle = 500,
     .layout = .{
         .tile = .{
             .nmaster = 1,

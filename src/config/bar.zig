@@ -54,10 +54,10 @@ tags: ?struct {
     empty_fg: ?u32 = null,
     /// The mark of a selected tag shows the layout of the output. The
     /// pointer that enters a selected tag shows the menu of the layouts of
-    /// `cycle_layouts`, also a click on a selected tag. A left click on the
-    /// shown tag goes to the next layout, a right click to the previous
-    /// layout. false: a square, no menu, and the clicks of `click`. Refer to
-    /// src/kwm/tag_mark.zig and src/kwm/tag_menu.zig.
+    /// `cycle_layouts`, also a click on a selected tag. A click on a line of
+    /// the menu selects the layout. A left or right click on the shown tag
+    /// only shows the menu. false: a square, no menu, and the clicks of
+    /// `click`. Refer to src/kwm/tag_mark.zig and src/kwm/tag_menu.zig.
     layout: bool = true,
     click: meta.enum_struct(
         kwm.Button,

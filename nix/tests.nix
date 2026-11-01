@@ -159,7 +159,7 @@ tests
     deck = mkCheck "deck" "The stack of the deck layout is an accordion";
     csd-margin = mkCheck "csd-margin" "The margin of a window with client side decorations";
     tooltip = mkCheck "tooltip" "The pointer goes straight down into a tooltip with click commands";
-    layout-menu = mkCheck "layout-menu" "The mark of the selected tag shows the layout, its menu and a quick second press of the tag select the layout";
+    layout-menu = mkCheck "layout-menu" "The mark of the selected tag shows the layout, and its menu selects the layout";
     overlay = mkCheck "overlay" "Super down alone shows the band of the key bindings";
   };
 }

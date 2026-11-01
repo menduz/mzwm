@@ -6,6 +6,9 @@
 //!   selects the tag: the menu does not show. The pointer did not enter a
 //!   selected tag.
 //! - A click on a selected tag shows the menu.
+//! - A left or right click on the tag that the output shows only shows the
+//!   menu: it does not do the action of the configuration
+//!   (`only_shows_menu`). A click on a line of the menu selects the layout.
 //! - The pointer leaves the cell and comes back: the menu shows again.
 //!
 //! bar.zig holds one `State` for all bars. `zig build test` runs the tests
@@ -50,6 +53,20 @@ pub const State = struct {
         return self.open and selected and same(self.cell, cell);
     }
 };
+
+
+/// A button of the pointer, for `only_shows_menu`.
+pub const Button = enum { left, right, other };
+
+
+/// A click with `button` on the label of `tag` in the bar. `shown` holds the
+/// tags that the output shows. True: the output shows only `tag`, and the
+/// button is left or right. Then the click only shows the menu. False: the
+/// click also does the action of the configuration. `enabled` is
+/// `bar.tags.layout`: false gives false.
+pub fn only_shows_menu(enabled: bool, button: Button, tag: u32, shown: u32) bool {
+    return enabled and tag == shown and button != .other;
+}
 
 
 fn same(a: ?Cell, b: ?Cell) bool {
@@ -103,4 +120,18 @@ test "State: the pointer leaves the cell and comes back" {
     s.hover(other1, true);
     try testing.expect(s.shows(other1, true));
     try testing.expect(!s.shows(tag1, true));
+}
+
+test "only_shows_menu: a left or right click on the tag that the output shows" {
+    try testing.expect(only_shows_menu(true, .left, 1, 1));
+    try testing.expect(only_shows_menu(true, .right, 1, 1));
+    // The middle button does the action of the configuration.
+    try testing.expect(!only_shows_menu(true, .other, 1, 1));
+    // Another tag: the click selects it (the action of the configuration).
+    try testing.expect(!only_shows_menu(true, .left, 2, 1));
+    // The output shows tags 1 and 2: the click does the action of the
+    // configuration, for example it shows only tag 1.
+    try testing.expect(!only_shows_menu(true, .left, 1, 3));
+    // No mark of the layout and no menu.
+    try testing.expect(!only_shows_menu(false, .left, 1, 1));
 }
