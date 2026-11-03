@@ -1,7 +1,8 @@
-# Tests the overlay of the Super key: Super down alone shows a band at the
+# Tests the overlay of the Super key: Super down shows a band at the
 # bottom of the output after the delay, with the key bindings of
-# `kwm bindings`. Super up removes it. A key binding before the delay stops
-# it. Run it with the environment of `kwm-test-overlay` in tests.nix. Refer
+# `kwm bindings`. Shift down with Super gives only the bindings with Super
+# and Shift, a lower band. Super up removes it. A key binding before the
+# delay stops it. Run it with the environment of `kwm-test-overlay` in tests.nix. Refer
 # to src/kwm/overlay.zig and super_hold.zig.
 #
 # With TEST_SCREENSHOT set, the test copies the screenshot of the band to
@@ -18,8 +19,8 @@ TEST_KWM_CONFIG=$(python3 - "$TEST_DEFAULT_CONFIG" <<'PY'
 import sys
 config = open(sys.argv[1]).read()
 replacements = [
-    ("    .overlay = .{\n        .enabled = false,\n        .command = .{ \"kwm\", \"-c\", \"{config}\", \"bindings\" },\n        .delay = 2000,\n",
-     "    .overlay = .{\n        .enabled = true,\n        .command = .{ \"kwm\", \"-c\", \"{config}\", \"bindings\" },\n        .delay = 1000,\n"),
+    ("    .overlay = .{\n        .enabled = false,\n        .command = .{ \"kwm\", \"-c\", \"{config}\", \"bindings\", \"{modifiers}\" },\n        .delay = 2000,\n",
+     "    .overlay = .{\n        .enabled = true,\n        .command = .{ \"kwm\", \"-c\", \"{config}\", \"bindings\", \"{modifiers}\" },\n        .delay = 1000,\n"),
     ('        .font = "monospace:size=10",\n', '        .font = "DejaVu Sans Mono:size=9",\n'),
     ("        .gtk_colors = .{\n            .fg = \"tooltip_text_color\",\n            .bg = \"tooltip_color\",\n            .accent = \"active_color_1\",\n        },\n",
      "        .gtk_colors = null,\n"),
@@ -70,6 +71,7 @@ start_input
 sleep 1
 
 SUPER=125
+SHIFT=42
 J=36
 
 # Super down alone. Before the delay, there is no band.
@@ -102,6 +104,33 @@ else
 fi
 if [ -n "${TEST_SCREENSHOT:-}" ]; then
   cp "$work/shown.png" "$TEST_SCREENSHOT"
+fi
+all_line=$line
+
+# Shift down with Super: only the bindings with Super and Shift, thus less
+# rows and a lower top line. Shift up gives all bindings again.
+input key $SHIFT down
+sleep 0.5
+grim "$work/shift.png"
+read -r line _ <<<"$(band "$work/shift.png")"
+if [ "$line" = none ] || [ "$line" -lt 0 ]; then
+  echo "FAIL: no band with Super and Shift down ($line)"
+  failed=1
+elif [ "$line" -gt "$all_line" ]; then
+  echo "ok: Super and Shift give a lower band (row $line, all bindings: row $all_line)"
+else
+  echo "FAIL: the band with Super and Shift is not lower (row $line, all bindings: row $all_line)"
+  failed=1
+fi
+input key $SHIFT up
+sleep 0.5
+grim "$work/shift-up.png"
+read -r line _ <<<"$(band "$work/shift-up.png")"
+if [ "$line" = "$all_line" ]; then
+  echo "ok: Shift up gives all bindings again"
+else
+  echo "FAIL: after Shift up, the band starts at row $line, not $all_line"
+  failed=1
 fi
 
 # Super up removes the band.

@@ -87,9 +87,9 @@ window_below_pointer: struct {
     new: bool = false,
 } = .{},
 has_pointer_interaction: bool = false,
-/// river sends modifiers_update for Super, for the overlay. Refer to
-/// overlay.zig.
-modifiers_watched: bool = false,
+/// The modifiers that river sends modifiers_update for, for the overlay:
+/// Super, and all modifiers while Super is down. Refer to overlay.zig.
+modifiers_watched: u32 = 0,
 /// The surface of kwm under the pointer, from wl_pointer, for the widgets.
 pointer_surface: ?*wl.Surface = null,
 pointer_surface_x: i32 = 0,
@@ -258,9 +258,9 @@ pub fn manage(self: *Self) void {
     // modifiers_watch is part of the manage sequence. river 0.5 has it in
     // version 3 of river_xkb_bindings_v1.
     if (comptime build_options.overlay_enabled) {
-        const watch = ctx.cfg.overlay.enabled;
+        const watch: u32 = if (ctx.cfg.overlay.enabled) @import("overlay.zig").watched_modifiers() else 0;
         if (watch != self.modifiers_watched and self.rwm_xkb_binding_seat.getVersion() >= 3) {
-            self.rwm_xkb_binding_seat.modifiersWatch(if (watch) .{ .mod4 = true } else .{});
+            self.rwm_xkb_binding_seat.modifiersWatch(@bitCast(watch));
             self.modifiers_watched = watch;
         }
     }

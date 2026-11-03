@@ -19,7 +19,7 @@ const Config = @import("config");
 
 var runtime_log_level: std.log.Level = if (builtins.mode == .Debug) .debug else .info;
 const usage =
-    \\usage: kwm [options] [bindings]
+    \\usage: kwm [options] [bindings [modifiers]]
     \\  -h,-help               Print this help message and exit.
     \\  -v,-version            Print the version number and exit.
     \\  -c,-config             Specify custom configuration file path.
@@ -27,6 +27,8 @@ const usage =
     \\
     \\  bindings               Print the key bindings of the default mode and
     \\                         their descriptions in columns, and exit.
+    \\                         With modifiers ("Super+Shift"), print only the
+    \\                         bindings with all these modifiers.
     \\
 ;
 
@@ -86,7 +88,7 @@ pub fn main(init: process.Init) !void {
             process.exit(1);
         }
     }
-    const bindings_command = options.args.len == 1 and mem.eql(u8, options.args[0], "bindings");
+    const bindings_command = (options.args.len == 1 or options.args.len == 2) and mem.eql(u8, options.args[0], "bindings");
     if (options.args.len != 0 and !bindings_command) {
         log.err("unknown option '{s}'", .{options.args[0]});
         try print(init.io, .stderr, usage);
@@ -105,7 +107,10 @@ pub fn main(init: process.Init) !void {
         return err;
     };
 
-    if (bindings_command) return print_bindings(init, config_path, options.flags.@"log-level");
+    if (bindings_command) {
+        const filter = if (options.args.len == 2) options.args[1] else "";
+        return print_bindings(init, config_path, filter, options.flags.@"log-level");
+    }
 
     const display = try wl.Display.connect(null);
     defer display.disconnect();
@@ -198,19 +203,25 @@ fn registry_listener(registry: *wl.Registry, event: wl.Registry.Event, globals: 
 
 
 /// `kwm bindings`: the key bindings of the default mode, in columns for the
-/// width of the terminal. The overlay of kwm runs this command in a pseudo
-/// terminal. Refer to src/kwm/bindings_list.zig.
-fn print_bindings(init: process.Init, config_path: []const u8, log_level: ?[]const u8) !void {
+/// width of the terminal. With `filter` ("Super+Shift"), only the bindings
+/// with all these modifiers. The overlay of kwm runs this command in a
+/// pseudo terminal. Refer to src/kwm/bindings_list.zig.
+fn print_bindings(init: process.Init, config_path: []const u8, filter: []const u8, log_level: ?[]const u8) !void {
     // The standard error is the pseudo terminal of the overlay. Show only
     // errors there, if the user does not give a log level.
     if (log_level == null) runtime_log_level = .err;
+
+    const mask = kwm.bindings_list.parse_mask(filter) catch {
+        log.err("unknown modifier in '{s}', use Super, Ctrl, Alt, Shift, Mod3 or Mod5", .{filter});
+        process.exit(1);
+    };
 
     const arena = init.arena.allocator();
     const cfg = Config.load(.{ .gpa = arena, .io = init.io, .env = init.environ_map }, config_path) catch |err| blk: {
         if (err != error.FileNotFound) log.err("load `{s}` failed ({}), use the default configuration", .{ config_path, err });
         break :blk Config.default;
     };
-    const entries = try kwm.bindings_list.collect(arena, cfg.bindings.key, Config.default_mode, Config.default_mode);
+    const entries = try kwm.bindings_list.collect(arena, cfg.bindings.key, Config.default_mode, Config.default_mode, mask);
 
     // The size of the terminal, or COLUMNS, or 80 columns. A pipe gets no
     // escape sequences and no row limit.

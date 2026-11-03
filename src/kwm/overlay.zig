@@ -1,5 +1,5 @@
 //! The overlay: a band at the bottom of the focused output, from the left
-//! edge to the right edge, while the Super key stays down alone. Refer to
+//! edge to the right edge, while the Super key stays down. Refer to
 //! `overlay` in the configuration, and to super_hold.zig for the sequence.
 //!
 //! kwm runs `overlay.command` in a pseudo terminal. The terminal has the
@@ -13,6 +13,11 @@
 //! default text and background colors, and the accent color in palette
 //! entries 4 and 12. When Super goes up, kwm stops the command and removes
 //! the band.
+//!
+//! "{modifiers}" in the command is the modifiers that are down, for example
+//! "Super+Shift", or "" when only Super is down (super_hold.filter). When
+//! another modifier goes down or up, kwm starts the command again. The band
+//! keeps the old text until the new command writes its text.
 
 const std = @import("std");
 const mem = std.mem;
@@ -22,6 +27,7 @@ const log = std.log.scoped(.overlay);
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
 const wp = wayland.client.wp;
+const river = wayland.client.river;
 const pixman = @import("pixman");
 const fcft = @import("fcft");
 
@@ -33,6 +39,7 @@ const render_ = @import("render.zig");
 const theme = @import("theme.zig");
 const vt = @import("vt.zig");
 const super_hold = @import("super_hold.zig");
+const bindings_list = @import("bindings_list.zig");
 const Context = @import("context.zig");
 const Output = @import("output.zig");
 const ShellSurface = @import("shell_surface.zig");
@@ -171,7 +178,19 @@ pub fn modifiers(old: u32, new: u32) void {
             ctx.run_later(.fromMilliseconds(delay), show_later);
         },
         .stop => stop(),
+        // The command started: start it again for the new modifiers.
+        .update => if (session != null) start() catch |err| {
+            log.err("start the overlay command failed: {}", .{err});
+            stop();
+        },
     }
+}
+
+
+/// The modifiers that river must tell kwm about. Refer to
+/// super_hold.watched.
+pub fn watched_modifiers() u32 {
+    return hold.watched();
 }
 
 
@@ -280,9 +299,12 @@ fn spawn(cols: u16, rows: u16, f: *const Fonts) !struct { pid: posix.pid_t, fd: 
     const command = ctx.cfg.overlay.command;
     if (command.len == 0) return error.NoCommand;
     const argv = try arena.allocSentinel(?[*:0]const u8, command.len, null);
+    const held: river.SeatV1.Modifiers = @bitCast(hold.filter());
+    const modifiers_text = try bindings_list.modifiers_text(arena, held);
     for (command, 0..) |arg, i| {
         // "{config}" is the configuration file of this kwm.
-        const value = try mem.replaceOwned(u8, arena, arg, "{config}", ctx.config_path);
+        const with_config = try mem.replaceOwned(u8, arena, arg, "{config}", ctx.config_path);
+        const value = try mem.replaceOwned(u8, arena, with_config, "{modifiers}", modifiers_text);
         argv[i] = try arena.dupeZ(u8, value);
     }
 
@@ -358,7 +380,8 @@ pub fn handle_fd() void {
         s.terminal.write(buffer[0..n]);
         changed = true;
     }
-    if (changed and visible) request_render();
+    // When the command stops without text, the band goes away.
+    if ((changed or s.fd == null) and visible) request_render();
 }
 
 
@@ -398,8 +421,12 @@ pub fn render() void {
         return hide();
     };
     defer snapshot.deinit(ctx.gpa);
-    // No text yet. The output of the command shows the band.
-    if (snapshot.used_rows == 0) return hide();
+    // No text yet. The output of the command shows the band. While a new
+    // command for other modifiers runs, the band keeps the old text.
+    if (snapshot.used_rows == 0) {
+        if (s.fd == null) hide();
+        return;
+    }
 
     if (surface == null) {
         surface = Surface.create() catch |err| {

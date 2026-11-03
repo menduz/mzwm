@@ -110,10 +110,10 @@ pub const Config = struct {
     kill_prompt: []const []const u8 = &.{ "rofi", "-dmenu", "-i", "-no-custom", "-format", "i", "-p", "{title}" },
 
     /// A band at the bottom of the focused output, from the left edge to the
-    /// right edge, while the Super key stays down alone for `delay`
-    /// milliseconds. Super up removes it. A key binding or another modifier
-    /// before that stops it until the next press of Super. Only in the
-    /// default mode. Refer to src/kwm/overlay.zig and super_hold.zig.
+    /// right edge, while the Super key stays down for `delay` milliseconds.
+    /// Super up removes it. A key binding before that stops it until the
+    /// next press of Super. Only in the default mode. Refer to
+    /// src/kwm/overlay.zig and super_hold.zig.
     ///
     /// kwm runs `command` in a pseudo terminal with the width of the output
     /// and `max_height` of its height, and draws the text of the terminal
@@ -122,8 +122,11 @@ pub const Config = struct {
     /// bindings: `kwm bindings`. It needs the build option `-Doverlay`.
     overlay: struct {
         enabled: bool = false,
-        /// "{config}" is the configuration file of this kwm.
-        command: []const []const u8 = &.{ "kwm", "-c", "{config}", "bindings" },
+        /// "{config}" is the configuration file of this kwm. "{modifiers}"
+        /// is the modifiers that are down, for example "Super+Shift", or ""
+        /// when only Super is down. kwm starts the command again when
+        /// another modifier goes down or up.
+        command: []const []const u8 = &.{ "kwm", "-c", "{config}", "bindings", "{modifiers}" },
         delay: u32 = 2000,
         /// A fontconfig pattern of a monospace font with a bold face, for
         /// example Iosevka. null: the font of the bar. A bold cell uses the

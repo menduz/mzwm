@@ -340,14 +340,16 @@
     // writes the index of the row; {title} is "<title> does not close"
     .kill_prompt = .{ "rofi", "-dmenu", "-i", "-no-custom", "-format", "i", "-p", "{title}" },
 
-    // a band at the bottom of the focused output while the Super key stays down alone for `delay`
-    // milliseconds; Super up removes it; a binding or another modifier stops it until the next press
+    // a band at the bottom of the focused output while the Super key stays down for `delay`
+    // milliseconds; Super up removes it; a binding stops it until the next press
     // kwm runs `command` in a pseudo terminal (libghostty-vt) and draws its text; the default
-    // command prints the key bindings and their `description` in columns; {config} is this file
+    // command prints the key bindings and their `description` in columns; {config} is this file;
+    // {modifiers} is the modifiers that are down ("Super+Shift"), or "" when only Super is down,
+    // and kwm runs the command again when another modifier goes down or up
     // needs the build option -Doverlay
     .overlay = .{
         .enabled = false,
-        .command = .{ "kwm", "-c", "{config}", "bindings" },
+        .command = .{ "kwm", "-c", "{config}", "bindings", "{modifiers}" },
         .delay = 2000,
         // a monospace font with a bold face (the chords are bold), null is the font of the bar
         .font = "monospace:size=10",

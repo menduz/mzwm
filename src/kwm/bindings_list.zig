@@ -5,6 +5,9 @@
 //! Each entry has the chord ("Super+Shift+Return") and the description of
 //! the binding. A binding without a description gets a text from its action.
 //! The entries are in the lexicographic order of the chord, without case.
+//! With a filter ("Super+Shift"), the list has only the bindings with all
+//! the modifiers of the filter. The overlay gives the modifiers that are
+//! down.
 //!
 //! The list fills columns from top to bottom, as `ls`. In each column, the
 //! chords align on the left, and the descriptions align after the widest
@@ -44,6 +47,48 @@ const modifier_names = [_]struct { []const u8, []const u8 }{
 };
 
 
+/// A set of modifiers: bit i is `modifier_names[i]`.
+pub const Mask = u8;
+
+
+/// The mask of `modifiers`, a struct with a bool field for each modifier.
+pub fn mask(modifiers: anytype) Mask {
+    var result: Mask = 0;
+    inline for (modifier_names, 0..) |pair, i| {
+        if (@hasField(@TypeOf(modifiers), pair[0]) and @field(modifiers, pair[0])) {
+            result |= 1 << i;
+        }
+    }
+    return result;
+}
+
+
+/// The mask of a text such as "Super+Shift", without case. An empty text
+/// gives 0.
+pub fn parse_mask(text: []const u8) error{UnknownModifier}!Mask {
+    var result: Mask = 0;
+    var parts = mem.tokenizeScalar(u8, text, '+');
+    next: while (parts.next()) |part| {
+        for (modifier_names, 0..) |pair, i| {
+            if (std.ascii.eqlIgnoreCase(part, pair[1])) {
+                result |= @as(Mask, 1) << @intCast(i);
+                continue :next;
+            }
+        }
+        return error.UnknownModifier;
+    }
+    return result;
+}
+
+
+/// The names of `modifiers` in the order of the chord, with "+" between,
+/// for example "Super+Shift". `modifiers` is a struct with a bool field for
+/// each modifier.
+pub fn modifiers_text(gpa: mem.Allocator, modifiers: anytype) ![]u8 {
+    return chord(gpa, modifiers, "");
+}
+
+
 /// The chord text of a binding: the modifiers in a fixed order, then the
 /// keysym with an upper case first letter. Each part has "+" between.
 /// `modifiers` is a struct with a bool field for each modifier.
@@ -51,15 +96,18 @@ pub fn chord(gpa: mem.Allocator, modifiers: anytype, keysym: []const u8) ![]u8 {
     var text: std.ArrayList(u8) = .empty;
     errdefer text.deinit(gpa);
 
-    inline for (modifier_names) |pair| {
-        if (@hasField(@TypeOf(modifiers), pair[0]) and @field(modifiers, pair[0])) {
-            try text.appendSlice(gpa, pair[1]);
-            try text.append(gpa, '+');
-        }
+    const m = mask(modifiers);
+    for (modifier_names, 0..) |pair, i| {
+        if (m & (@as(Mask, 1) << @intCast(i)) == 0) continue;
+        if (text.items.len > 0) try text.append(gpa, '+');
+        try text.appendSlice(gpa, pair[1]);
     }
-    const start = text.items.len;
-    try text.appendSlice(gpa, keysym);
-    if (text.items.len > start) text.items[start] = std.ascii.toUpper(text.items[start]);
+    if (keysym.len > 0) {
+        if (text.items.len > 0) try text.append(gpa, '+');
+        const start = text.items.len;
+        try text.appendSlice(gpa, keysym);
+        text.items[start] = std.ascii.toUpper(text.items[start]);
+    }
     return text.toOwnedSlice(gpa);
 }
 
@@ -151,7 +199,8 @@ fn append_program(gpa: mem.Allocator, text: *std.ArrayList(u8), path: []const u8
 }
 
 
-/// The sorted entries of the key bindings in `mode`. A binding without a
+/// The sorted entries of the key bindings in `mode` that have all the
+/// modifiers of `filter` (0: all bindings). A binding without a
 /// mode is in `default_mode`. Two bindings with the same chord give one
 /// entry: the first binding. Bindings of digits are in one entry when they
 /// have the same modifiers and the same description (refer to
@@ -160,13 +209,14 @@ fn append_program(gpa: mem.Allocator, text: *std.ArrayList(u8), path: []const u8
 /// `keys` is the list `bindings.key` of the configuration. The event of a
 /// binding is `.repeat` with an action, or `.click` with a `pressed` and a
 /// `released` action.
-pub fn collect(gpa: mem.Allocator, keys: anytype, mode: []const u8, default_mode: []const u8) ![]Entry {
+pub fn collect(gpa: mem.Allocator, keys: anytype, mode: []const u8, default_mode: []const u8, filter: Mask) ![]Entry {
     var entries: std.ArrayList(Entry) = .empty;
     errdefer free(gpa, entries.items);
     defer entries.deinit(gpa);
 
     for (keys) |key| {
         if (!mem.eql(u8, key.mode orelse default_mode, mode)) continue;
+        if (mask(key.modifiers) & filter != filter) continue;
 
         const chord_text = try chord(gpa, key.modifiers, key.keysym);
         errdefer gpa.free(chord_text);
@@ -518,7 +568,7 @@ test "collect: the bindings of the mode, sorted, with a text for each" {
         .{ .mode = "default", .keysym = "j", .modifiers = .{ .mod4 = true }, .event = .{ .repeat = .{ .focus_iter = .{ .direction = .forward } } } },
         .{ .keysym = "x", .modifiers = .{ .mod4 = true }, .event = .{ .click = .{} } },
     };
-    const entries = try collect(gpa, &keys, "default", "default");
+    const entries = try collect(gpa, &keys, "default", "default", 0);
     defer free(gpa, entries);
 
     const expected = [_]Entry{
@@ -532,6 +582,49 @@ test "collect: the bindings of the mode, sorted, with a text for each" {
         try testing.expectEqualStrings(e.chord, a.chord);
         try testing.expectEqualStrings(e.description, a.description);
     }
+}
+
+test "collect: only the bindings with all the modifiers of the filter" {
+    const gpa = testing.allocator;
+    const keys = [_]TestKey{
+        .{ .keysym = "q", .modifiers = .{ .mod4 = true }, .description = "close", .event = .{ .repeat = .close } },
+        .{ .keysym = "c", .modifiers = .{ .mod4 = true, .shift = true }, .description = "calculator", .event = .{ .repeat = .close } },
+        .{ .keysym = "1", .modifiers = .{ .mod4 = true, .ctrl = true, .shift = true }, .description = "also put", .event = .{ .repeat = .close } },
+        .{ .keysym = "Return", .modifiers = .{ .mod1 = true }, .description = "swap", .event = .{ .repeat = .close } },
+        .{ .keysym = "XF86AudioMute", .modifiers = .{}, .description = "mute", .event = .{ .repeat = .close } },
+    };
+
+    const super_shift = try collect(gpa, &keys, "default", "default", try parse_mask("Super+Shift"));
+    defer free(gpa, super_shift);
+    try expect_entries(&.{
+        .{ .chord = "Super+Ctrl+Shift+1", .description = "also put" },
+        .{ .chord = "Super+Shift+C", .description = "calculator" },
+    }, super_shift);
+
+    const alt = try collect(gpa, &keys, "default", "default", try parse_mask("alt"));
+    defer free(gpa, alt);
+    try expect_entries(&.{.{ .chord = "Alt+Return", .description = "swap" }}, alt);
+
+    const everything = try collect(gpa, &keys, "default", "default", 0);
+    defer free(gpa, everything);
+    try testing.expectEqual(keys.len, everything.len);
+}
+
+test "parse_mask: the names of the chord, without case" {
+    try testing.expectEqual(@as(Mask, 0), try parse_mask(""));
+    try testing.expectEqual(mask(TestModifiers{ .mod4 = true, .shift = true }), try parse_mask("Super+Shift"));
+    try testing.expectEqual(mask(TestModifiers{ .ctrl = true, .mod1 = true }), try parse_mask("alt+CTRL"));
+    try testing.expectError(error.UnknownModifier, parse_mask("Super+Hyper"));
+}
+
+test "modifiers_text: the names in the order of the chord" {
+    const gpa = testing.allocator;
+    const text = try modifiers_text(gpa, TestModifiers{ .shift = true, .mod4 = true });
+    defer gpa.free(text);
+    try testing.expectEqualStrings("Super+Shift", text);
+    const none = try modifiers_text(gpa, TestModifiers{});
+    defer gpa.free(none);
+    try testing.expectEqualStrings("", none);
 }
 
 fn test_entries(gpa: mem.Allocator, items: []const Entry) !std.ArrayList(Entry) {
