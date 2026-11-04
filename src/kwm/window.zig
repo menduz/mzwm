@@ -1908,6 +1908,12 @@ fn rwm_window_listener(rwm_window: *river.WindowV1, event: river.WindowV1.Event,
                 if (window.geometry_undefined) {
                     window.geometry_undefined = false;
                     window.center();
+                    // Seat.try_focus does not focus a window without a
+                    // geometry. This event comes in a render sequence. Thus
+                    // request a manage sequence to focus the window. If not,
+                    // the title bar shows the focus, but river does not
+                    // give the keyboard to the window.
+                    ctx.manage_dirty(@src());
                 }
             }
         },

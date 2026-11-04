@@ -62,6 +62,19 @@ expect_exit a "the window of the tab closes after the drop"
 expect_state b "^maximized=1 activated=1 keyboard=1 " "after the drop, the other window gets the keyboard"
 close b
 
+# A new floating window without a size: kwm shows it after its first commit
+# (geometry_undefined), and then it must get the focus. The pointer waits on
+# the bar.
+input move 640 5
+open a
+expect_state a " activated=1 keyboard=1 " "the tiled window has the focus"
+open f --fixed
+expect_state f " activated=1 keyboard=1 .* tiled=0 " "a new floating window has the focus"
+expect_state a " activated=0 keyboard=0 " "the tiled window loses the focus to the floating window"
+close f
+expect_state a " activated=1 keyboard=1 " "after a close of the floating window, the tiled window gets the focus"
+close a
+
 # All windows float: the pointer over a window does not focus it, a click
 # does. Refer to src/kwm/hover_focus.zig. In the float layout, the windows
 # stay where the tile layout put them. The pointer waits on the bar.
