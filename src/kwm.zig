@@ -214,6 +214,7 @@ test {
     _ = @import("kwm/tray_collapse.zig");
     _ = @import("kwm/tray_icon.zig");
     _ = @import("kwm/widget_class.zig");
+    _ = @import("kwm/widgets/common.zig");
     _ = @import("kwm/widgets/cpu.zig");
     _ = @import("kwm/widgets/storage.zig");
     _ = @import("kwm/widgets/thermal.zig");

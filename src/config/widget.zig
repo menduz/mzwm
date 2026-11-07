@@ -66,9 +66,9 @@ pub const Clock = clickable(struct {
 });
 
 pub const Disk = clickable(struct {
-    /// A path in the file system to read. null: all the file systems on
-    /// local SSD and NVMe disks (no USB disks). Refer to
-    /// src/kwm/widgets/storage.zig.
+    /// A path in the file system to read. null: all the mounted file systems
+    /// on a block device or in a ZFS pool, but not the boot partition. Refer
+    /// to src/kwm/widgets/storage.zig.
     path: ?[:0]const u8 = null,
     /// Show the widget when this percentage of a disk is used, or more.
     show: u8 = 0,

@@ -1,12 +1,13 @@
 //! The file systems of the disk widget, without Wayland objects and without
-//! files. widgets/disk.zig reads /proc/self/mounts, sysfs and the udev
-//! database. `zig build test` runs the tests below.
+//! files. widgets/disk.zig reads /proc/self/mounts and calls statvfs(3).
+//! `zig build test` runs the tests below.
 //!
-//! Without a `path`, the widget counts the file systems on local SSD and
-//! NVMe disks: the disk name starts with "nvme" or "sd", the disk does not
-//! rotate, is not removable, and is not on USB. A device-mapper volume (for
-//! example LUKS) counts when all its disks count. A ZFS pool counts when all
-//! the partitions with its label count.
+//! Without a `path`, the widget counts all the mounted file systems on a
+//! block device or in a ZFS pool. These file systems do not count:
+//!   - The boot partition (/boot, /boot/efi, /efi).
+//!   - Read-only images (squashfs, ISO 9660, UDF, EROFS). They are always
+//!     full.
+//! The swap is not mounted. Thus it does not count.
 
 const std = @import("std");
 const mem = std.mem;
@@ -65,9 +66,10 @@ pub const Source = union(enum) {
 };
 
 pub fn source_of(m: Mount) Source {
-    // FAT is the EFI system partition. It is small, and its free space is
-    // always less than the free space of the other file systems.
-    if (mem.eql(u8, m.fs_type, "vfat")) return .none;
+    if (boot(m.target)) return .none;
+    for (images) |image| {
+        if (mem.eql(u8, m.fs_type, image)) return .none;
+    }
     if (mem.eql(u8, m.fs_type, "zfs")) {
         const end = mem.indexOfScalar(u8, m.source, '/') orelse m.source.len;
         if (end == 0) return .none;
@@ -77,50 +79,17 @@ pub fn source_of(m: Mount) Source {
     return .none;
 }
 
+/// The file system types of read-only images.
+const images = [_][]const u8{ "squashfs", "iso9660", "udf", "erofs" };
 
-/// True when a disk is a local SSD or NVMe disk. `path` is the sysfs path
-/// of the disk without links. `removable` and `rotational` are the text of
-/// its files "removable" and "queue/rotational", null when they are not
-/// there.
-pub fn local_flash(name: []const u8, path: []const u8, removable: ?[]const u8, rotational: ?[]const u8) bool {
-    if (!mem.startsWith(u8, name, "nvme") and !mem.startsWith(u8, name, "sd")) return false;
-    if (mem.indexOf(u8, path, "/usb") != null) return false;
-    const fixed = removable orelse return false;
-    const solid = rotational orelse return false;
-    return mem.eql(u8, fixed, "0") and mem.eql(u8, solid, "0");
-}
-
-
-/// The sysfs path of the disk of a block device. `path` is the sysfs path
-/// of the block device without links. The directory of a partition is in
-/// the directory of its disk.
-pub fn disk_path(path: []const u8, partition: bool) []const u8 {
-    if (!partition) return path;
-    const end = mem.lastIndexOfScalar(u8, path, '/') orelse return path;
-    return path[0..end];
-}
-
-
-/// The pool of a ZFS partition, from its file in /run/udev/data. null: the
-/// device is not in a ZFS pool.
-pub fn udev_zfs_pool(text: []const u8) ?[]const u8 {
-    var zfs = false;
-    var label: ?[]const u8 = null;
-    var lines = mem.splitScalar(u8, text, '\n');
-    while (lines.next()) |line| {
-        if (mem.eql(u8, line, "E:ID_FS_TYPE=zfs_member")) zfs = true;
-        if (mem.startsWith(u8, line, "E:ID_FS_LABEL=")) label = line["E:ID_FS_LABEL=".len..];
+/// True when `target` is the mount point of the boot partition, or a mount
+/// point in it. The boot partition is small, and only an update writes to it.
+fn boot(target: []const u8) bool {
+    for ([_][]const u8{ "/boot", "/efi" }) |dir| {
+        if (!mem.startsWith(u8, target, dir)) continue;
+        if (target.len == dir.len or target[dir.len] == '/') return true;
     }
-    return if (zfs) label else null;
-}
-
-
-/// The "major:minor" of a block device file in /run/udev/data ("b259:3").
-/// null: not a block device.
-pub fn udev_block_device(file_name: []const u8) ?[]const u8 {
-    if (file_name.len < 2 or file_name[0] != 'b') return null;
-    if (mem.indexOfScalar(u8, file_name, ':') == null) return null;
-    return file_name[1..];
+    return false;
 }
 
 
@@ -178,6 +147,17 @@ pub const Summary = struct {
     free: u64,
     /// The largest used part in percent.
     percent: u64,
+
+    /// True when a file system has less than `alert` bytes free.
+    pub fn low(self: Summary, alert: u64) bool {
+        return self.free < alert;
+    }
+
+    /// True when the widget shows: a file system is `show` percent used or
+    /// more, or has less than `alert` bytes free.
+    pub fn shown(self: Summary, show: u64, alert: u64) bool {
+        return self.low(alert) or self.percent >= show;
+    }
 };
 
 /// null: no file system.
@@ -217,52 +197,19 @@ test "the source of a file system" {
     try testing.expectEqualStrings("tank", code.zfs);
     const pool = source_of(parse_mount("tank /tank zfs rw 0 0").?);
     try testing.expectEqualStrings("tank", pool.zfs);
+    // USB disks and FAT file systems count.
+    const usb = source_of(parse_mount("/dev/sdb1 /run/media/u/STICK vfat rw 0 0").?);
+    try testing.expectEqualStrings("/dev/sdb1", usb.device);
+    // The boot partition does not count.
     try testing.expectEqual(.none, source_of(parse_mount("/dev/nvme0n1p1 /boot vfat rw 0 0").?));
+    try testing.expectEqual(.none, source_of(parse_mount("/dev/nvme0n1p1 /boot/efi vfat rw 0 0").?));
+    try testing.expectEqual(.none, source_of(parse_mount("/dev/nvme0n1p1 /efi vfat rw 0 0").?));
+    try testing.expect(source_of(parse_mount("/dev/sda1 /bootstrap ext4 rw 0 0").?) == .device);
+    // Read-only images are always full. They do not count.
+    try testing.expectEqual(.none, source_of(parse_mount("/dev/loop0 /snap/core squashfs ro 0 0").?));
+    try testing.expectEqual(.none, source_of(parse_mount("/dev/sr0 /run/media/u/CD iso9660 ro 0 0").?));
     try testing.expectEqual(.none, source_of(parse_mount("tmpfs /tmp tmpfs rw 0 0").?));
     try testing.expectEqual(.none, source_of(parse_mount("server:/x /mnt nfs4 rw 0 0").?));
-}
-
-test "local SSD and NVMe disks count, USB, removable and rotating disks do not" {
-    const pci_nvme = "/sys/devices/pci0000:00/0000:00:06.0/0000:02:00.0/nvme/nvme1/nvme1n1";
-    try testing.expect(local_flash("nvme1n1", pci_nvme, "0", "0"));
-    // With NVMe multipath, the disk is in /sys/devices/virtual.
-    try testing.expect(local_flash("nvme0n1", "/sys/devices/virtual/nvme-subsystem/nvme-subsys0/nvme0n1", "0", "0"));
-    const sata = "/sys/devices/pci0000:00/0000:00:17.0/ata1/host0/target0:0:0/0:0:0:0/block/sda";
-    try testing.expect(local_flash("sda", sata, "0", "0"));
-    try testing.expect(!local_flash("sda", sata, "0", "1"));
-    const usb = "/sys/devices/pci0000:00/0000:00:14.0/usb2/2-1/2-1:1.0/host1/target1:0:0/1:0:0:0/block/sdb";
-    try testing.expect(!local_flash("sdb", usb, "0", "0"));
-    try testing.expect(!local_flash("sdc", sata, "1", "0"));
-    try testing.expect(!local_flash("mmcblk0", "/sys/devices/platform/mmc/mmcblk0", "0", "0"));
-    try testing.expect(!local_flash("loop0", "/sys/devices/virtual/block/loop0", "0", "0"));
-    try testing.expect(!local_flash("nvme1n1", pci_nvme, null, "0"));
-    try testing.expect(!local_flash("nvme1n1", pci_nvme, "0", null));
-}
-
-test "the disk of a partition" {
-    const part = "/sys/devices/pci0000:00/nvme/nvme1/nvme1n1/nvme1n1p3";
-    try testing.expectEqualStrings("/sys/devices/pci0000:00/nvme/nvme1/nvme1n1", disk_path(part, true));
-    try testing.expectEqualStrings(part, disk_path(part, false));
-}
-
-test "the ZFS pool of a udev database file" {
-    const member =
-        \\S:disk/by-id/nvme-Samsung-part1
-        \\E:ID_FS_LABEL=tank
-        \\E:ID_FS_LABEL_ENC=tank
-        \\E:ID_FS_TYPE=zfs_member
-        \\E:ID_FS_USAGE=filesystem
-    ;
-    try testing.expectEqualStrings("tank", udev_zfs_pool(member).?);
-    try testing.expectEqual(null, udev_zfs_pool("E:ID_FS_LABEL=data\nE:ID_FS_TYPE=ext4\n"));
-    try testing.expectEqual(null, udev_zfs_pool("E:ID_FS_TYPE=zfs_member\n"));
-}
-
-test "the block devices of the udev database" {
-    try testing.expectEqualStrings("259:3", udev_block_device("b259:3").?);
-    try testing.expectEqual(null, udev_block_device("c13:64"));
-    try testing.expectEqual(null, udev_block_device("n3"));
-    try testing.expectEqual(null, udev_block_device("+usb:1-1"));
 }
 
 test "the text is the smallest free space, the percent the largest use" {
@@ -274,6 +221,29 @@ test "the text is the smallest free space, the percent the largest use" {
     try testing.expectEqual(50 * gb, s.free);
     try testing.expectEqual(88, s.percent);
     try testing.expectEqual(null, summary(&.{}));
+}
+
+test "a full disk shows the widget when another disk has much free space" {
+    const usages = [_]Usage{
+        .init("/", 288 * gb, 3 * gb, 270 * gb),
+        .init("/home/u/code", 454 * gb, 424 * gb, 30 * gb),
+    };
+    const s = summary(&usages).?;
+    try testing.expect(s.shown(80, 10 * gb));
+    try testing.expect(s.low(10 * gb));
+    // Below the alert, also when the percent is below `show`.
+    const big = [_]Usage{
+        .init("/", 4000 * gb, 5 * gb, 3000 * gb),
+        .init("/home/u/code", 454 * gb, 424 * gb, 30 * gb),
+    };
+    try testing.expect(summary(&big).?.shown(80, 10 * gb));
+    // No file system is near the limits.
+    const calm = [_]Usage{
+        .init("/", 288 * gb, 100 * gb, 188 * gb),
+        .init("/home/u/code", 454 * gb, 424 * gb, 30 * gb),
+    };
+    try testing.expect(!summary(&calm).?.shown(80, 10 * gb));
+    try testing.expect(!summary(&calm).?.low(10 * gb));
 }
 
 test "the tooltip line of a file system" {

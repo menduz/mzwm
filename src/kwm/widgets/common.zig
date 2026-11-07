@@ -103,6 +103,32 @@ pub fn read_file(path: [*:0]const u8, buffer: []u8) ![]const u8 {
 }
 
 
+/// Read a file of /proc or /sys of unknown length. The caller frees the
+/// bytes. Do not use Io.Dir.readFileAlloc for these files: stat(2) gives
+/// their size as 0, and it reads nothing.
+pub fn read_file_alloc(gpa: std.mem.Allocator, path: [*:0]const u8, limit: usize) ![]u8 {
+    const fd = try posix.openZ(path, .{ .ACCMODE = .RDONLY, .CLOEXEC = true }, 0);
+    defer posix.close(fd);
+
+    var list: std.ArrayList(u8) = .empty;
+    errdefer list.deinit(gpa);
+    while (true) {
+        if (list.items.len >= limit) return error.StreamTooLong;
+        try list.ensureUnusedCapacity(gpa, 4096);
+        const n = try posix.read(fd, list.unusedCapacitySlice());
+        if (n == 0) break;
+        list.items.len += n;
+    }
+    return list.toOwnedSlice(gpa);
+}
+
+test "read_file_alloc reads a file of /proc" {
+    const text = try read_file_alloc(std.testing.allocator, "/proc/self/mounts", 1 << 20);
+    defer std.testing.allocator.free(text);
+    try std.testing.expect(text.len > 0);
+}
+
+
 /// Write `bytes` with a unit: "512B", "1.2K", "34M", "1.5G".
 pub fn print_bytes(list: *std.ArrayList(u8), bytes: u64) !void {
     const units = "BKMGT";

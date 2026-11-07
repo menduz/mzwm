@@ -4,8 +4,8 @@
 //! low.
 //!
 //! With a `path`, the widget reads only the file system of that path.
-//! Without it, the widget reads the file systems on local SSD and NVMe disks.
-//! Refer to storage.zig.
+//! Without it, the widget reads all the mounted file systems on a block
+//! device or in a ZFS pool, but not the boot partition. Refer to storage.zig.
 //!
 //! The approach follows w_dysk.zig of ziew (https://github.com/gryzus24/ziew,
 //! MIT license).
@@ -13,7 +13,6 @@
 const std = @import("std");
 const fmt = std.fmt;
 const mem = std.mem;
-const Io = std.Io;
 
 const common = @import("common.zig");
 const ctx = common.ctx;
@@ -40,9 +39,9 @@ extern "c" fn statvfs(path: [*:0]const u8, buf: *Statvfs) c_int;
 
 /// kwm reads not more file systems.
 const max_file_systems = 32;
-/// The depth of device-mapper volumes on other volumes.
-const max_depth = 4;
 const max_path = std.fs.max_path_bytes;
+/// The maximum length of the key of a file system. Refer to Found.
+const max_key = 256;
 
 
 pub fn update(cfg: anytype, out: *common.Output) !void {
@@ -50,7 +49,7 @@ pub fn update(cfg: anytype, out: *common.Output) !void {
     const count = if (cfg.path) |path| one: {
         usages[0] = try usage(path);
         break :one 1;
-    } else try local_usages(&usages);
+    } else try mounted_usages(&usages);
 
     const sum = storage.summary(usages[0..count]) orelse {
         out.hidden = true;
@@ -58,8 +57,8 @@ pub fn update(cfg: anytype, out: *common.Output) !void {
     };
     mem.sort(storage.Usage, usages[0..count], {}, storage.less_than);
 
-    const alert = sum.free < cfg.alert;
-    out.hidden = !alert and sum.percent < cfg.show;
+    const alert = sum.low(cfg.alert);
+    out.hidden = !sum.shown(cfg.show, cfg.alert);
 
     const critical = ctx.cfg.bar.widget_colors.critical;
     var buffer: [32]u8 = undefined;
@@ -94,8 +93,8 @@ fn usage(mount_point: []const u8) !storage.Usage {
 /// A file system of /proc/self/mounts. A file system can have more mount
 /// points (bind mounts, ZFS datasets): the widget shows the shortest one.
 const Found = struct {
-    /// The block device ("dm-0"), or "zfs:" and the pool.
-    key_buffer: [64]u8 = undefined,
+    /// The block device ("/dev/dm-0"), or "zfs:" and the pool.
+    key_buffer: [max_key]u8 = undefined,
     key_len: usize = 0,
     target_buffer: [max_path]u8 = undefined,
     target_len: usize = 0,
@@ -110,10 +109,10 @@ const Found = struct {
 };
 
 
-/// Write the usage of the file systems on local SSD and NVMe disks into
-/// `usages`. Return their number.
-fn local_usages(usages: []storage.Usage) !usize {
-    const text = try Io.Dir.cwd().readFileAlloc(ctx.io, "/proc/self/mounts", ctx.gpa, .limited(1 << 20));
+/// Write the usage of the mounted file systems into `usages`. Return their
+/// number. Refer to storage.source_of.
+fn mounted_usages(usages: []storage.Usage) !usize {
+    const text = try common.read_file_alloc(ctx.gpa, "/proc/self/mounts", 1 << 20);
     defer ctx.gpa.free(text);
 
     var found: [max_file_systems]Found = undefined;
@@ -121,10 +120,10 @@ fn local_usages(usages: []storage.Usage) !usize {
     var lines = mem.splitScalar(u8, text, '\n');
     next: while (lines.next()) |line| {
         const m = storage.parse_mount(line) orelse continue;
-        var key_buffer: [64]u8 = undefined;
+        var key_buffer: [max_key]u8 = undefined;
         const key = switch (storage.source_of(m)) {
             .none => continue,
-            .device => |path| device_name(path, &key_buffer) orelse continue,
+            .device => |path| device_key(path, &key_buffer) orelse continue,
             .zfs => |pool| fmt.bufPrint(&key_buffer, "zfs:{s}", .{ pool }) catch continue,
         };
         var target_buffer: [max_path]u8 = undefined;
@@ -139,12 +138,6 @@ fn local_usages(usages: []storage.Usage) !usize {
             continue :next;
         }
 
-        const local = switch (storage.source_of(m)) {
-            .none => unreachable,
-            .device => local_block(key, 0),
-            .zfs => |pool| local_pool(pool),
-        };
-        if (!local) continue;
         if (found_count == found.len) break;
 
         const f = &found[found_count];
@@ -166,78 +159,15 @@ fn local_usages(usages: []storage.Usage) !usize {
 }
 
 
-/// The name of a block device in /sys/class/block ("dm-0", "nvme1n1p3"),
-/// from its path in /dev.
-fn device_name(path: []const u8, buffer: []u8) ?[]const u8 {
+/// The key of a block device: its path without links ("/dev/dm-0"). Two
+/// paths of one device give one key. When kwm cannot read the links, the key
+/// is `path`. null: the key is too long.
+fn device_key(path: []const u8, buffer: []u8) ?[]const u8 {
     var real_buffer: [max_path]u8 = undefined;
-    const real = real_path(path, &real_buffer) orelse return null;
-    const name = std.fs.path.basename(real);
-    if (name.len > buffer.len) return null;
-    @memcpy(buffer[0..name.len], name);
-    return buffer[0..name.len];
-}
-
-
-/// True when the block device `name` is on local SSD or NVMe disks only.
-/// A device-mapper volume is on the devices in its directory "slaves".
-fn local_block(name: []const u8, depth: usize) bool {
-    if (depth > max_depth) return false;
-
-    var path_buffer: [max_path]u8 = undefined;
-    const slaves_path = fmt.bufPrint(&path_buffer, "/sys/class/block/{s}/slaves", .{ name }) catch return false;
-    if (Io.Dir.openDirAbsolute(ctx.io, slaves_path, .{ .iterate = true })) |dir_value| {
-        var dir = dir_value;
-        defer dir.close(ctx.io);
-        var slaves: usize = 0;
-        var it = dir.iterate();
-        while (it.next(ctx.io) catch return false) |slave| {
-            if (!local_block(slave.name, depth + 1)) return false;
-            slaves += 1;
-        }
-        if (slaves > 0) return true;
-    } else |_| {}
-
-    const class_path = fmt.bufPrint(&path_buffer, "/sys/class/block/{s}", .{ name }) catch return false;
-    var real_buffer: [max_path]u8 = undefined;
-    const real = real_path(class_path, &real_buffer) orelse return false;
-    var partition_buffer: [16]u8 = undefined;
-    const partition = read_text(real, "partition", &partition_buffer) != null;
-    const disk = storage.disk_path(real, partition);
-
-    var removable_buffer: [8]u8 = undefined;
-    var rotational_buffer: [8]u8 = undefined;
-    return storage.local_flash(
-        std.fs.path.basename(disk),
-        disk,
-        read_text(disk, "removable", &removable_buffer),
-        read_text(disk, "queue/rotational", &rotational_buffer),
-    );
-}
-
-
-/// True when the ZFS pool `pool` is on local SSD or NVMe disks only. The
-/// partitions of the pool have its name as label in the udev database.
-fn local_pool(pool: []const u8) bool {
-    var dir = Io.Dir.openDirAbsolute(ctx.io, "/run/udev/data", .{ .iterate = true }) catch return false;
-    defer dir.close(ctx.io);
-
-    var members: usize = 0;
-    var it = dir.iterate();
-    while (it.next(ctx.io) catch return false) |entry| {
-        const device = storage.udev_block_device(entry.name) orelse continue;
-        var text_buffer: [16 * 1024]u8 = undefined;
-        const text = dir.readFile(ctx.io, entry.name, &text_buffer) catch continue;
-        const label = storage.udev_zfs_pool(text) orelse continue;
-        if (!mem.eql(u8, label, pool)) continue;
-
-        var path_buffer: [64]u8 = undefined;
-        const path = fmt.bufPrint(&path_buffer, "/sys/dev/block/{s}", .{ device }) catch return false;
-        var real_buffer: [max_path]u8 = undefined;
-        const real = real_path(path, &real_buffer) orelse return false;
-        if (!local_block(std.fs.path.basename(real), 0)) return false;
-        members += 1;
-    }
-    return members > 0;
+    const real = real_path(path, &real_buffer) orelse path;
+    if (real.len > buffer.len) return null;
+    @memcpy(buffer[0..real.len], real);
+    return buffer[0..real.len];
 }
 
 
@@ -247,14 +177,4 @@ fn real_path(path: []const u8, buffer: *[max_path]u8) ?[]const u8 {
     const path_z = fmt.bufPrintZ(&path_buffer, "{s}", .{ path }) catch return null;
     const real = std.c.realpath(path_z.ptr, buffer) orelse return null;
     return mem.span(real);
-}
-
-
-/// The text of the file `file` in the directory `dir`, without the new line.
-/// null: an error.
-fn read_text(dir: []const u8, file: []const u8, buffer: []u8) ?[]const u8 {
-    var path_buffer: [max_path]u8 = undefined;
-    const path = fmt.bufPrintZ(&path_buffer, "{s}/{s}", .{ dir, file }) catch return null;
-    const text = common.read_file(path.ptr, buffer) catch return null;
-    return mem.trim(u8, text, " \n");
 }
