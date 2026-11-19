@@ -44,7 +44,8 @@ configuration file.
 | Mod4-Ctrl-Shift-[1-9] | Toggle the window tag |
 | Mod4-\[hl\] | Decrease/increase the master area size |
 | Mod1-Mod4-\[hjkl\] | Set tile layout's master location to left/bottom/top/right |
-| Mod4-\[-=\] | Decrease/increase the number of windows in master area |
+| Mod4-= | One window: tile and maximize. Two: tile in equal halves. Three or more: float in two equal-width columns, filling each evenly |
+| Mod4-Shift-\[hl\] | Increase/decrease the number of windows in master area |
 | Mod1-Mod4-\[-=\] | Decrease/increase the gaps |
 | Mod4-Shift-a | Toggle auto swallow |
 | Mod4-Shift-g | Toggle grid layout's direction |

@@ -15,6 +15,7 @@ const config = @import("config");
 const utils = @import("utils.zig");
 const Layout = @import("layout.zig");
 const layout_cycle = @import("layout_cycle.zig");
+const floating = @import("floating.zig");
 const Context = @import("context.zig");
 const Window = @import("window.zig");
 const types = @import("types.zig");
@@ -49,6 +50,7 @@ layout_tag: [32]Layout.Type,
 prev_layout_tag: [32]Layout.Type,
 
 name: ?[]const u8 = null,
+flex_tag: ?u32 = null,
 x: i32 = undefined,
 y: i32 = undefined,
 width: i32 = undefined,
@@ -331,6 +333,65 @@ pub fn set_current_layout(self: *Self, layout_t: Layout.Type) void {
 }
 
 
+/// One or two windows use tile; larger workspaces get a floating arrangement
+/// after the windows have handled unfullscreen/maximize events.
+pub fn prepare_flex(self: *Self) void {
+    var count: usize = 0;
+    var it = ctx.windows.safeIterator(.forward);
+    while (it.next()) |window| {
+        if (window.is_visible_in(self)) count += 1;
+    }
+
+    const tiled = count == 1 or count == 2;
+    self.set_current_layout(if (tiled) .tile else .float);
+    self.flex_tag = if (tiled) null else self.tag;
+    const tile = &self.layouts[@ctz(self.main_tag)].tile;
+    if (tiled) {
+        tile.nmaster = 1;
+        tile.mfact = 0.5;
+        tile.master_location = .left;
+    }
+
+    it = ctx.windows.safeIterator(.forward);
+    while (it.next()) |window| {
+        if (!window.is_visible_in(self)) continue;
+        if (tiled) window.toggle_floating(false);
+        // With smart gaps, the lone tiled window already fills the output
+        // and is reported maximized. Explicitly maximize only if gaps would
+        // keep it from filling the output.
+        window.toggle_maximize(count == 1 and Layout.outer_gap(tile.outer_gap, 1) != 0);
+        if (window.fullscreen != .none) window.prepare_unfullscreen();
+    }
+}
+
+
+fn arrange_flex(self: *Self) void {
+    const tag = self.flex_tag orelse return;
+    self.flex_tag = null;
+    if (tag != self.tag or self.current_layout() != .float) return;
+
+    var count: usize = 0;
+    var it = ctx.windows.safeIterator(.forward);
+    while (it.next()) |window| {
+        if (window.is_visible_in(self)) count += 1;
+    }
+    if (count == 0) return;
+
+    const layout = self.layouts[@ctz(self.main_tag)].tile;
+    const gap = Layout.outer_gap(layout.outer_gap, count);
+    var index: usize = 0;
+    it = ctx.windows.safeIterator(.forward);
+    while (it.next()) |window| {
+        if (!window.is_visible_in(self)) continue;
+        window.place_cell(floating.flex_cell(
+            index, count, self.exclusive_width(), self.exclusive_height(),
+            gap, layout.inner_gap,
+        ));
+        index += 1;
+    }
+}
+
+
 pub fn switch_to_previous_layout(self: *Self) void {
     log.debug("<{*}> tag {b} switch to previous layout", .{ self, self.main_tag });
 
@@ -365,6 +426,8 @@ pub fn manage(self: *Self) void {
             }
         }
     }
+
+    self.arrange_flex();
 
     // The pointer holds a floating window at a drop target: the layout shows
     // the drop. Refer to begin_drop_preview in context.zig.

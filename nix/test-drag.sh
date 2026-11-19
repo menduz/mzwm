@@ -269,12 +269,15 @@ drag_out_to() {
   input release
 }
 more_masters
-expect_state b " tiled=1 .* width=1262 " "with two master windows and no stack, the column is as wide as the output"
+# The complete frames fill the output less the outer gaps (9 pixels).
+# Each client keeps the border (2 pixels) inside its place as well.
+column_width=$((1280 - 2 * 9 - 2 * 2))
+expect_state b " tiled=1 .* width=$column_width " "with two master windows and no stack, the column fills the output inside the padding"
 drag_out_to 1276 360
 expect_state c " tiled=1 .* width=$stack_width " "with a larger nmaster, a drop at the right edge puts the window in the stack"
 expect_state b " tiled=1 .* width=$master_width " "the other window is the master window"
 more_masters
-expect_state b " tiled=1 .* width=1262 " "again two master windows in one column"
+expect_state b " tiled=1 .* width=$column_width " "again two master windows in one column"
 drag_out_to 3 360
 expect_state c " tiled=1 .* width=$master_width " "with a larger nmaster, a drop at the left edge makes the window the master window"
 expect_state b " tiled=1 .* width=$stack_width " "the other window goes to the stack"

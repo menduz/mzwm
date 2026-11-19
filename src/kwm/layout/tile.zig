@@ -62,12 +62,15 @@ pub fn arrange(self: *const Self, output: *Output) !void {
     const window_num: i32 = @intCast(windows.items.len);
     const nmaster = @min(window_num, self.nmaster);
     const nstack = window_num - self.nmaster;
+    // Divide the space left after the gap, as the equalizer does. Splitting
+    // the gap into two rounded halves would lose a pixel for odd gaps.
+    const column_gap = @min(@max(0, self.inner_gap), usable_width);
     if (nstack > 0) {
-        master_width = @intFromFloat(self.mfact * @as(f32, @floatFromInt(usable_width)));
+        master_width = @intFromFloat(self.mfact * @as(f32, @floatFromInt(usable_width - column_gap)));
         master_height = @divFloor(usable_height, nmaster);
         master_remain = @mod(usable_height, nmaster);
 
-        stack_width = usable_width - master_width;
+        stack_width = usable_width - column_gap - master_width;
         stack_height = @divFloor(usable_height, nstack);
         stack_remain = @mod(usable_height, nstack);
     } else {
@@ -84,12 +87,12 @@ pub fn arrange(self: *const Self, output: *Output) !void {
         if (i < nmaster) {
             x = 0;
             y = (@as(i32, @intCast(i)) * master_height) + if (i > 0) master_remain + self.inner_gap else 0;
-            w = if (nstack > 0) master_width - @divFloor(self.inner_gap, 2) else master_width;
+            w = master_width;
             h = (master_height + if (i == 0) master_remain else 0) - if (i > 0) self.inner_gap else 0;
         } else {
-            x = master_width + @divFloor(self.inner_gap, 2);
+            x = master_width + column_gap;
             y = ((@as(i32, @intCast(i))-nmaster) * stack_height) + if (i > nmaster) stack_remain + self.inner_gap else 0;
-            w = stack_width - @divFloor(self.inner_gap, 2);
+            w = stack_width;
             h = (stack_height + if (i == nmaster) stack_remain else 0) - if (i > nmaster) self.inner_gap else 0;
         }
         w = @max(0, w);
@@ -97,20 +100,16 @@ pub fn arrange(self: *const Self, output: *Output) !void {
 
         switch (self.master_location) {
             .left => {
-                window.unbound_move(x+outer_gap, y+outer_gap);
-                window.unbound_resize(w, h);
+                window.place_cell(.{ .x = x+outer_gap, .y = y+outer_gap, .width = w, .height = h });
             },
             .right => {
-                window.unbound_move(usable_width-x-w+outer_gap, y+outer_gap);
-                window.unbound_resize(w, h);
+                window.place_cell(.{ .x = usable_width-x-w+outer_gap, .y = y+outer_gap, .width = w, .height = h });
             },
             .top => {
-                window.unbound_move(y+outer_gap, x+outer_gap);
-                window.unbound_resize(h, w);
+                window.place_cell(.{ .x = y+outer_gap, .y = x+outer_gap, .width = h, .height = w });
             },
             .bottom => {
-                window.unbound_move(y+outer_gap, usable_width-x-w+outer_gap);
-                window.unbound_resize(h, w);
+                window.place_cell(.{ .x = y+outer_gap, .y = usable_width-x-w+outer_gap, .width = h, .height = w });
             }
         }
     }

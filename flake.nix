@@ -79,6 +79,7 @@
           test-bar = b.tests.bar;
           test-title-bar = b.tests.title-bar;
           test-drag = b.tests.drag;
+          test-offscreen = b.tests.offscreen;
           test-tray = b.tests.tray;
           test-gauge = b.tests.gauge;
           test-badge = b.tests.badge;
@@ -87,6 +88,7 @@
           test-csd-margin = b.tests.csd-margin;
           test-tooltip = b.tests.tooltip;
           test-layout-menu = b.tests.layout-menu;
+          test-flex = b.tests.flex;
           test-overlay = b.tests.overlay;
         }
       );

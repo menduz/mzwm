@@ -16,6 +16,7 @@
   gnugrep,
   wtype,
   wlrctl,
+  wlr-randr,
   grim,
   procps,
   wayland-scanner,
@@ -83,6 +84,7 @@ let
         gnugrep
         wtype
         wlrctl
+        wlr-randr
         grim
         procps
       ];
@@ -131,6 +133,7 @@ let
     bar = mkTest "bar";
     title-bar = mkTest "title-bar";
     drag = mkTest "drag";
+    offscreen = mkTest "offscreen";
     tray = mkTest "tray";
     gauge = mkTest "gauge";
     badge = mkTest "badge";
@@ -140,6 +143,7 @@ let
     csd-margin = mkTest "csd-margin";
     tooltip = mkTest "tooltip";
     layout-menu = mkTest "layout-menu";
+    flex = mkTest "flex";
     overlay = mkTest "overlay";
   };
 in
@@ -155,11 +159,13 @@ tests
     badge = mkCheck "badge" "A flashing badge changes between white text on a red fill and the text of the bar, at the same place";
     tray = mkCheck "tray" "The collapsed tray shows the symbolic items, the items that need attention, and all items under the pointer";
     drag = mkCheck "drag" "A drag of a window by its title bar makes it floating, and an edge of the output makes it tiled";
+    offscreen = mkCheck "offscreen" "Floating windows can move and resize partly offscreen without losing their geometry";
     theme = mkCheck "theme" "kwm follows the GTK theme of the settings portal, also for the desktop color";
     deck = mkCheck "deck" "The stack of the deck layout is an accordion";
     csd-margin = mkCheck "csd-margin" "The margin of a window with client side decorations";
     tooltip = mkCheck "tooltip" "The pointer goes straight down into a tooltip with click commands";
     layout-menu = mkCheck "layout-menu" "The mark of the selected tag shows the layout, and its menu selects the layout";
+    flex = mkCheck "flex" "Super+= tiles one or two windows and arranges larger workspaces in floating columns";
     overlay = mkCheck "overlay" "Super down shows the band of the key bindings, and other modifiers filter it";
   };
 }

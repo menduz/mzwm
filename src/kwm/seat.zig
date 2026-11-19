@@ -785,6 +785,9 @@ fn handle_actions(self: *Self) void {
                     output.set_current_layout(data.layout);
                 }
             },
+            .flex => {
+                if (ctx.current_output) |output| output.prepare_flex();
+            },
             .switch_to_previous_layout => {
                 if (ctx.current_output) |output| {
                     output.switch_to_previous_layout();

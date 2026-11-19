@@ -435,6 +435,7 @@
         .tile = .{
             .nmaster = 1,
             .mfact = 0.6,
+            // Gaps between complete frames, also used by the floating equalizer.
             .inner_gap = 10,
             .outer_gap = 9,
 
@@ -528,6 +529,7 @@
         //              the pressed action and released action could define at the same time
         .key = .{
             // windows
+            .{ .keysym = "equal", .modifiers = .{ .mod4 = true }, .description = "Arrange equally (1-2 tiled, 3+ floating)", .event = .{ .click = .{ .pressed = .flex } } },
             .{ .keysym = "q", .modifiers = .{ .mod4 = true }, .event = .{ .click = .{ .pressed = .close } } },
             .{ .keysym = "space", .modifiers = .{ .mod4 = true, .shift = true }, .event = .{ .click = .{ .pressed = .toggle_floating } } },
             .{ .keysym = "f", .modifiers = .{ .mod4 = true, .shift = true }, .event = .{ .click = .{ .pressed = .{ .toggle_fullscreen = .{ .in_window = false } } } } },

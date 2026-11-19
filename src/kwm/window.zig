@@ -393,23 +393,25 @@ pub fn place(self: *Self, pos: types.PlacePosition) void {
 }
 
 
+/// Interactive moves may leave part of a floating window outside the output.
+/// render() clips what is outside; the position and size stay intact. At
+/// least one pixel of the window stays on the output.
 pub fn move(self: *Self, x: ?i32, y: ?i32) void {
-    defer log.debug("<{*}> move to (x: {}, y: {})", .{ self, self.x, self.y });
+    self.unbound_move(x, y);
+    self.keep_overlap();
+}
 
-    self.x = @max(
-        ctx.cfg.border.width,
-        @min(
-            x orelse self.x,
-            self.output.?.exclusive_width()-self.width-ctx.cfg.border.width
-        )
+
+/// Move a floating window back until one pixel of it or more is on its
+/// output. Refer to floating.keep_overlap. The layout places tiled windows.
+fn keep_overlap(self: *Self) void {
+    const output = self.output orelse return;
+    if (self.geometry_undefined or self.managed_by_layout()) return;
+    const pos = floating_zig.keep_overlap(
+        self.x, self.y, self.width, self.height,
+        output.exclusive_width(), output.exclusive_height(),
     );
-    self.y = @max(
-        ctx.cfg.border.width + self.title_above(),
-        @min(
-            y orelse self.y,
-            self.output.?.exclusive_height()-self.height-ctx.cfg.border.width
-        )
-    );
+    self.unbound_move(pos.x, pos.y);
 }
 
 
@@ -421,18 +423,38 @@ pub fn unbound_move(self: *Self, x: ?i32, y: ?i32) void {
 }
 
 
+/// Fit the complete frame into a cell. Tiled windows keep their title bar
+/// inside their geometry; floating windows have it above their geometry.
+/// A tiled window filling the output stays maximized without a border inset.
+pub fn place_cell(self: *Self, cell: floating_zig.Rect) void {
+    const full = if (self.output) |output|
+        self.managed_by_layout() and maximize_zig.fills_area(
+            cell.x, cell.y, cell.width, cell.height,
+            output.exclusive_width(), output.exclusive_height(),
+        )
+    else false;
+    const border = if (full) 0 else ctx.cfg.border.width;
+    const title = self.title_above();
+    self.geometry_undefined = false;
+    self.unbound_move(cell.x + border, cell.y + border + title);
+    self.unbound_resize(@max(1, cell.width - 2 * border), @max(1, cell.height - 2 * border - title));
+}
+
+
 pub fn snap_to(
     self: *Self,
     edge: Edge
 ) void {
+    const output = self.output orelse return;
+    const border = ctx.cfg.border.width;
     var new_x: ?i32 = null;
     var new_y: ?i32 = null;
 
     switch (edge) {
-        .top => new_y = 0,
-        .bottom => new_y = self.output.?.exclusive_height(),
-        .left => new_x = 0,
-        .right => new_x = self.output.?.exclusive_width(),
+        .top => new_y = border + self.title_above(),
+        .bottom => new_y = @max(border + self.title_above(), output.exclusive_height() - self.height - border),
+        .left => new_x = border,
+        .right => new_x = @max(border, output.exclusive_width() - self.width - border),
     }
 
     self.move(new_x, new_y);
@@ -445,20 +467,12 @@ pub fn resize(self: *Self, width: ?i32, height: ?i32) void {
         .{ self, self.width, self.height },
     );
 
-    self.width = @min(
-        self.output.?.exclusive_width()-self.x-ctx.cfg.border.width,
-        @max(
-            width orelse self.width,
-            self.min_width,
-        )
-    );
-    self.height = @min(
-        self.output.?.exclusive_height()-self.y-ctx.cfg.border.width,
-        @max(
-            height orelse self.height,
-            self.min_height,
-        )
-    );
+    // Keep client constraints, including when a dimensions event arrives
+    // after a move offscreen. The output edge is not a size constraint.
+    self.width = @max(width orelse self.width, self.min_width);
+    self.height = @max(height orelse self.height, self.min_height);
+    // A smaller window can lose its last pixels on the output.
+    self.keep_overlap();
 
     if (self.swallowing_border) |*border| {
         border.damage();
@@ -1692,13 +1706,15 @@ pub fn render(self: *Self) void {
     } else if (
         left < 0
         or top < 0
-        or right > self.output.?.width
-        or bottom > self.output.?.height
+        or right > self.output.?.exclusive_width()
+        or bottom > self.output.?.exclusive_height()
     ) {
+        // The coordinates are relative to the exclusive area. Clip to the
+        // exclusive area on all sides, thus a window does not cover the bar.
         left = @max(left, 0);
-        right = @min(right, self.output.?.width);
+        right = @min(right, self.output.?.exclusive_width());
         top = @max(top, 0);
-        bottom = @min(bottom, self.output.?.height);
+        bottom = @min(bottom, self.output.?.exclusive_height());
         self.rwm_window.setClipBox(left-self.x-offset_x, top-self.y-offset_y, right-left, bottom-top);
         self.clip_state = .cliped;
     } else if (self.clip_state != .normal){
@@ -1926,7 +1942,6 @@ fn rwm_window_listener(rwm_window: *river.WindowV1, event: river.WindowV1.Event,
                 if (window.output == null) {
                     window.unbound_resize(data.width, data.height);
                 } else {
-                    window.move(null, null);
                     window.resize(data.width, data.height);
                 }
                 if (window.geometry_undefined) {

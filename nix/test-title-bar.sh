@@ -142,9 +142,12 @@ close a
 # kill_prompt: "Cancel" keeps the window, "Kill it" kills the client. Refer to
 # src/kwm/force_close.zig.
 open g --decoration
+# Map g before h so the test clicks h's focused caption even when the two
+# client processes would otherwise connect in the opposite order.
+expect_state g '^maximized=1 .* decoration=server ' 'the first window is ready before the unresponsive client'
 open h --decoration --hang
-expect_state h " decoration=server .* height=$((tiled_height - title_height))$" \
-  "the window that hangs has a title bar"
+expect_state h " activated=1 .* decoration=server .* height=$((tiled_height - title_height))$" \
+  "the window that hangs has focus and a title bar"
 grim "$work/hang.png"
 hang_width=$(field h width)
 read -r hx hy _ <<<"$(caption h "$work/hang.png" 000080 1084d0 "$hang_width")"

@@ -152,8 +152,15 @@ Mod4-\[hl\]
 Mod1-Mod4-\[hjkl\]
 	Set tile layout's master location to left/bottom/top/right.
 
-Mod4-\[-=\]
-	Decrease/increase the number of windows in master area.
+Mod4-=
+	With one window, select tile layout and maximize it. With two windows,
+	select tile layout and give each half of the workspace. With three or
+	more, select floating layout and arrange two equal-width columns, filling
+	each column evenly. These windows remain freely movable; press again to
+	arrange them again.
+
+Mod4-Shift-\[hl\]
+	Increase/decrease the number of windows in master area.
 
 Mod1-Mod4-\[-=\]
 	Decrease/increase the gaps.
