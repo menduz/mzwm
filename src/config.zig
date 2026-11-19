@@ -102,6 +102,10 @@ pub const Config = struct {
     /// and a close button. kwm always tries server side decorations. Refer to
     /// src/kwm/decoration.zig.
     title_bar: bool = true,
+    /// The icon of the program at the left of the title bar, as in the
+    /// caption of Windows 2000. The bar finds it as for `bar.title.icon`.
+    /// Refer to src/kwm/icons.zig.
+    title_bar_icon: bool = true,
     /// The command that asks to kill the process of a window that does not
     /// close: a click on the close button 2 seconds after the close request.
     /// It gets the rows "Kill it" and "Cancel" on its standard input, and

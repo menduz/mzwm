@@ -10,6 +10,9 @@ const testing = std.testing;
 /// The setting of the GTK theme: the GSettings key that toggle-theme sets.
 pub const namespace = "org.gnome.desktop.interface";
 pub const key = "gtk-theme";
+/// The setting of the icon theme, in the same namespace. The bar finds the
+/// icon of a program in it.
+pub const icon_key = "icon-theme";
 
 
 /// The name of the GTK theme in a setting of the settings portal. null: the
@@ -25,6 +28,17 @@ pub fn gtk_theme(setting_namespace: []const u8, setting_key: []const u8, value: 
 }
 
 
+/// The name of the icon theme in a setting of the settings portal. null:
+/// the setting is an other one, or the name is empty.
+pub fn icon_theme(setting_namespace: []const u8, setting_key: []const u8, value: []const u8) ?[]const u8 {
+    if (!mem.eql(u8, setting_namespace, namespace)) return null;
+    if (!mem.eql(u8, setting_key, icon_key)) return null;
+    const name = mem.trim(u8, value, " \t");
+    if (name.len == 0) return null;
+    return name;
+}
+
+
 test "gtk_theme: the GTK theme key" {
     try testing.expectEqualStrings("win-classic-dark", gtk_theme(namespace, key, "win-classic-dark").?);
     try testing.expectEqualStrings("win-classic-dark", gtk_theme(namespace, key, " win-classic-dark:dark").?);
@@ -35,4 +49,11 @@ test "gtk_theme: other settings and empty names" {
     try testing.expectEqual(@as(?[]const u8, null), gtk_theme("org.freedesktop.appearance", key, "x"));
     try testing.expectEqual(@as(?[]const u8, null), gtk_theme(namespace, key, ""));
     try testing.expectEqual(@as(?[]const u8, null), gtk_theme(namespace, key, ":dark"));
+}
+
+test "icon_theme: the icon theme key" {
+    try testing.expectEqualStrings("win-classic-dark", icon_theme(namespace, icon_key, " win-classic-dark").?);
+    try testing.expectEqual(@as(?[]const u8, null), icon_theme(namespace, key, "win-classic-dark"));
+    try testing.expectEqual(@as(?[]const u8, null), icon_theme("org.freedesktop.appearance", icon_key, "x"));
+    try testing.expectEqual(@as(?[]const u8, null), icon_theme(namespace, icon_key, " "));
 }

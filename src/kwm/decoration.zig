@@ -37,6 +37,18 @@ pub const button_margin = 2;
 /// The space at the left of the title.
 pub const text_margin = 3;
 
+/// The icon of the program at the left of the caption, as in Windows 2000:
+/// 16 logical pixels, `icon_margin` from the left end and from the top.
+pub const icon_size = 16;
+pub const icon_margin = 1;
+
+
+/// The start of the title in the caption, in logical pixels: after the icon,
+/// when the title bar shows one.
+pub fn title_x(icon: bool) i32 {
+    return if (icon) icon_margin + icon_size + text_margin else text_margin;
+}
+
 
 pub const Window = struct {
     ssd: bool,
@@ -61,6 +73,22 @@ pub fn has_title_bar(window: Window) bool {
 /// then holds the title in place of the title bar.
 pub fn bar_shows_title(only_without_title_bar: bool, title_bar: bool) bool {
     return !only_without_title_bar or !title_bar;
+}
+
+
+/// A window without a title bar shows the name of its sandbox in a label at
+/// its top corner (sandbox_label.zig). A maximized window, or a window that
+/// fills the output, has no label while the bar shows its title: the bar
+/// shows the name of the sandbox at the right end of the title. When the
+/// bar does not show the window (the bar is hidden, or an other window has
+/// the focus), the label stays.
+pub fn sandbox_name_in_bar(window: struct {
+    maximized: bool,
+    fills_output: bool,
+    /// The bar shows the title of this window.
+    bar_shows_window: bool,
+}) bool {
+    return (window.maximized or window.fills_output) and window.bar_shows_window;
 }
 
 
@@ -116,6 +144,16 @@ pub fn close_button(width: i32) Rect {
         .width = button_width,
         .height = button_height,
     };
+}
+
+
+/// The place of the name of the sandbox in the caption: at the right, `gap`
+/// before the close button at `button_x`. `left` is the start of the title.
+/// The title in the bar uses its end as `button_x`, and a `gap` of 0. null:
+/// the caption is too narrow for the name. The values are in pixels.
+pub fn sandbox_name_x(left: i32, button_x: i32, name_width: i32, gap: i32) ?i32 {
+    const x = button_x - gap - name_width;
+    return if (x >= left) x else null;
 }
 
 
@@ -240,6 +278,23 @@ test "close_button: at the right end of the caption" {
     try testing.expect(b.y + b.height <= caption_height);
 }
 
+test "title_x: after the icon" {
+    try testing.expectEqual(@as(i32, 3), title_x(false));
+    try testing.expectEqual(@as(i32, 20), title_x(true));
+    // The icon fits in the caption.
+    try testing.expect(icon_margin + icon_size <= caption_height);
+}
+
+test "sandbox_name_x: before the close button" {
+    const b = close_button(400);
+    try testing.expectEqual(@as(?i32, 382 - 2 - 50), sandbox_name_x(text_margin, b.x, 50, 2));
+    // The name touches the start of the title.
+    try testing.expectEqual(@as(?i32, text_margin), sandbox_name_x(text_margin, 60, 55, 2));
+    // A narrow caption has no name.
+    try testing.expectEqual(@as(?i32, null), sandbox_name_x(text_margin, 60, 56, 2));
+    try testing.expectEqual(@as(?i32, null), sandbox_name_x(text_margin, -4, 10, 2));
+}
+
 test "gradient: from the start color to the end color" {
     const start: u32 = 0x000080ff;
     const end: u32 = 0x1084d0ff;
@@ -328,6 +383,15 @@ test "drag_moves: a tiled window only by its title bar" {
     try testing.expect(!drag_moves(.{ .floating = false, .maximized = false, .fullscreen = false, .title = false, .tiled_moves = true }));
     try testing.expect(!drag_moves(.{ .floating = false, .maximized = false, .fullscreen = false, .title = true, .tiled_moves = false }));
     try testing.expect(!drag_moves(.{ .floating = false, .maximized = true, .fullscreen = false, .title = true, .tiled_moves = true }));
+}
+
+test "sandbox_name_in_bar: a maximized window while the bar shows its title" {
+    try testing.expect(sandbox_name_in_bar(.{ .maximized = true, .fills_output = false, .bar_shows_window = true }));
+    try testing.expect(sandbox_name_in_bar(.{ .maximized = false, .fills_output = true, .bar_shows_window = true }));
+    // The bar does not show the window: the label stays.
+    try testing.expect(!sandbox_name_in_bar(.{ .maximized = true, .fills_output = false, .bar_shows_window = false }));
+    // A tiled window with client side decorations keeps its label.
+    try testing.expect(!sandbox_name_in_bar(.{ .maximized = false, .fills_output = false, .bar_shows_window = true }));
 }
 
 test "bar_shows_title: always, or only without a title bar" {

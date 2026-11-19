@@ -149,6 +149,9 @@
             // the title only when the focused window has no title bar of kwm (maximized, fullscreen,
             // client side decorations, or a tiled window that fills the output); false: always
             .only_without_title_bar = true,
+            // the icon of the program before the title, as on the task bar of Windows 2000: from the
+            // desktop entry of the app_id, in the icon theme of the desktop (GSettings icon-theme)
+            .icon = true,
             .click = .{
                 .left = .{ .zoom = .{ .swap = false } },
             },

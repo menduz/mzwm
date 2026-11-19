@@ -1105,7 +1105,20 @@ fn draw_title(self: *Self, buffer: *render_.Buffer, start: i16, end: i16) void {
         }
     }
 
+    // The icon of the program at the left, as on a button of the task bar of
+    // Windows 2000. The marks of the window and the title follow it.
     var x = start;
+    if (area.icon) draw_icon: {
+        const app_id = window.app_id orelse break :draw_icon;
+        // 16 logical pixels, as in a title bar: the bitmap of the theme
+        // without scaling.
+        const size = utils.logical2physics(i32, decoration.icon_size, self.scale);
+        const icon = @import("icons.zig").app(app_id, size, colors.fg) orelse break :draw_icon;
+        const icon_x: i32 = @as(i32, start) + @divFloor(pad, 2);
+        draw_image(buffer, icon.image, icon_x, @divFloor(@as(i32, h) - size, 2), size);
+        x = @intCast(icon_x + size);
+    }
+
     if (window.sticky) {
         self.draw_box(buffer, false, .top, &fg, x, y);
     }
@@ -1131,28 +1144,37 @@ fn draw_title(self: *Self, buffer: *render_.Buffer, start: i16, end: i16) void {
     }
 
     // The window of a sandbox: the name of the sandbox in the color of the
-    // sandbox, before the title, as in the title bar. A window on the host
-    // shows no name. Refer to sandbox.zig.
+    // sandbox, at the right end of the title, as before the close button in
+    // the title bar. A window on the host shows no name. Refer to
+    // sandbox.zig.
+    var text_end = end;
     if (window.title_sandbox()) |label| draw_sandbox: {
         const name = label.name;
         const text_w = render_.utils.str_width(self.font.font, name) catch break :draw_sandbox;
-        const cell_w: u16 = @intCast(@min(text_w + pad, width));
+        const cell_w: i32 = @intCast(text_w + pad);
+        const cell_x: i16 = @intCast(decoration.sandbox_name_x(start, end, cell_w, 0) orelse break :draw_sandbox);
         const color = if (focused) label.color else sandbox.dim(label.color);
         const sandbox_bg = render_.utils.color(color);
         const sandbox_fg = render_.utils.color(sandbox.text_color(color));
         var cell = [_]pixman.Rectangle16 {
-            .{ .x = x, .y = 0, .width = cell_w, .height = h },
+            .{ .x = cell_x, .y = 0, .width = @intCast(cell_w), .height = h },
         };
         _ = pixman.Image.fillRectangles(.src, buffer.image, &sandbox_bg, 1, &cell);
         _ = self.font.render_str(
             buffer,
             name,
             &sandbox_fg,
-            x+@as(i16, @intCast(@divFloor(pad, 2))),
+            cell_x+@as(i16, @intCast(@divFloor(pad, 2))),
             y,
         );
-        x += @intCast(cell_w);
+        text_end = @max(start, cell_x - @as(i16, @intCast(@divFloor(pad, 2))));
     }
+
+    // A long title stops before the name of the sandbox.
+    var title_clip: pixman.Region16 = undefined;
+    title_clip.initRect(start, 0, @intCast(text_end - start), h);
+    defer title_clip.deinit();
+    _ = buffer.image.setClipRegion(&title_clip);
 
     _ = self.font.render_str(
         buffer,
@@ -1193,7 +1215,7 @@ fn draw_tray_item(
 
 
 /// Draw `image` in the square of `size` at (`x`, `y`), with its aspect ratio.
-fn draw_image(buffer: *render_.Buffer, image: *pixman.Image, x: i32, y: i32, size: i32) void {
+pub fn draw_image(buffer: *render_.Buffer, image: *pixman.Image, x: i32, y: i32, size: i32) void {
     const image_w = image.getWidth();
     const image_h = image.getHeight();
     const side = @max(image_w, image_h);

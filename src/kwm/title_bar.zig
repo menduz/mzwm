@@ -1,8 +1,9 @@
 //! The title bar of a window with server side decorations, as the caption of
 //! win-classic-theme: the title on the title color (a gradient for the
-//! focused window), and the close button at the right end. A window of a
-//! sandbox shows the name of the sandbox before the title, in the color of
-//! the sandbox. A decoration above the window holds the title bar.
+//! focused window), the icon of the program at the left (as in Windows
+//! 2000), and the close button at the right end. A window of a sandbox shows
+//! the name of the sandbox before the close button, in the color of the
+//! sandbox. A decoration above the window holds the title bar.
 //! decoration.zig gives the sizes and the pixels of the close button, and
 //! theme.zig the colors.
 //!
@@ -30,6 +31,7 @@ const render_ = @import("render.zig");
 const sandbox = @import("sandbox.zig");
 const decoration = @import("decoration.zig");
 const theme = @import("theme.zig");
+const icons = @import("icons.zig");
 const Context = @import("context.zig");
 const Window = @import("window.zig");
 const Bar = @import("bar.zig");
@@ -37,7 +39,7 @@ const Bar = @import("bar.zig");
 const ctx = Context.get();
 
 
-/// The sandbox of the window, for the name before the title.
+/// The sandbox of the window, for the name before the close button.
 pub const Sandbox = struct {
     name: []const u8,
     color: u32,
@@ -49,6 +51,8 @@ pub const State = struct {
     width: i32,
     focused: bool,
     title: []const u8,
+    /// The app_id of the window, for the icon. null: no icon.
+    app_id: ?[]const u8,
     sandbox: ?Sandbox,
     colors: theme.TitleColors,
     bevel: config.Bevel,
@@ -76,6 +80,8 @@ drawn: ?struct {
     /// A hash of the title and the name of the sandbox.
     text: u64,
     sandbox_color: ?u32,
+    /// The image of the icon, from the cache of icons.zig.
+    icon: ?*pixman.Image,
     colors: theme.TitleColors,
     bevel: config.Bevel,
 } = null,
@@ -125,14 +131,15 @@ pub fn render(self: *Self, bar: *Bar, state: State) void {
 
     const text = text_hash(state);
     const sandbox_color: ?u32 = if (state.sandbox) |s| s.color else null;
+    const icon = find_icon(bar, state);
     if (self.drawn) |d| {
         if (d.bar == bar and d.scale == bar.scale and d.width == state.width
             and d.focused == state.focused and d.pressed == self.pressed and d.text == text
-            and std.meta.eql(d.sandbox_color, sandbox_color)
+            and std.meta.eql(d.sandbox_color, sandbox_color) and d.icon == icon
             and std.meta.eql(d.colors, state.colors) and std.meta.eql(d.bevel, state.bevel)) return;
     }
 
-    self.draw(bar, state) catch |err| {
+    self.draw(bar, state, icon) catch |err| {
         log.err("<{*}> draw failed: {}", .{ self, err });
         return;
     };
@@ -144,9 +151,21 @@ pub fn render(self: *Self, bar: *Bar, state: State) void {
         .pressed = self.pressed,
         .text = text,
         .sandbox_color = sandbox_color,
+        .icon = icon,
         .colors = state.colors,
         .bevel = state.bevel,
     };
+}
+
+
+/// The icon of the program of the window, at the size of the icon in the
+/// caption. null: no icon.
+fn find_icon(bar: *const Bar, state: State) ?*pixman.Image {
+    if (!ctx.cfg.title_bar_icon) return null;
+    const app_id = state.app_id orelse return null;
+    const size = utils.logical2physics(i32, decoration.icon_size, bar.scale);
+    const icon = icons.app(app_id, size, state.colors.text) orelse return null;
+    return icon.image;
 }
 
 
@@ -186,7 +205,7 @@ fn fill_caption(pixels: []u32, stride: i32, from: i32, w: i32, caption: i32, col
 }
 
 
-fn draw(self: *Self, bar: *Bar, state: State) !void {
+fn draw(self: *Self, bar: *Bar, state: State, icon: ?*pixman.Image) !void {
     const font = &bar.font;
     const scale = bar.scale;
 
@@ -214,10 +233,32 @@ fn draw(self: *Self, bar: *Bar, state: State) !void {
     const button_x = w - utils.logical2physics(i32, decoration.button_margin, scale) - button_w;
     const button_y = @divFloor(caption - button_h, 2);
 
-    // The name of the sandbox and the title, at the left. The text stops
-    // before the close button.
+    // The icon of the program at the left, then the title. The close button
+    // covers an icon in a very narrow title bar.
+    if (icon) |image| {
+        const margin = utils.logical2physics(i32, decoration.icon_margin, scale);
+        const size = utils.logical2physics(i32, decoration.icon_size, scale);
+        Bar.draw_image(buffer, image, margin, @divFloor(caption - size, 2), size);
+    }
     const text_y = @divFloor(caption - font.height(), 2);
-    var x = utils.logical2physics(i32, decoration.text_margin, scale);
+    const text_x = utils.logical2physics(i32, decoration.title_x(icon != null), scale);
+    if (state.title.len > 0) {
+        const utf8 = try render_.utils.to_utf8(ctx.gpa, state.title);
+        defer ctx.gpa.free(utf8);
+        if (font.rasterize_text_run(utf8)) |run| {
+            defer run.destroy();
+            const fg = render_.utils.color(state.colors.text);
+            _ = font.render_text(buffer, run, &fg, text_x, text_y);
+        }
+    }
+    // The title color again from the space before the button: it covers a
+    // long title.
+    const gap = 2 * p;
+    fill_caption(pixels, w, @max(0, button_x - gap), w, caption, state.colors);
+
+    // The name of the sandbox at the right, before the close button. The
+    // title color covers the title below the name and in the space before
+    // the name.
     if (state.sandbox) |s| {
         const bg = if (state.focused) s.color else sandbox.dim(s.color);
         const utf8 = try render_.utils.to_utf8(ctx.gpa, s.name);
@@ -226,27 +267,14 @@ fn draw(self: *Self, bar: *Bar, state: State) !void {
             defer run.destroy();
             const pad = @divFloor(font.height(), 3);
             const badge_w = @as(i32, @intCast(render_.utils.text_width(run))) + 2 * pad;
-            if (x + badge_w < button_x) {
+            if (decoration.sandbox_name_x(text_x, button_x, badge_w, gap)) |x| {
+                fill_caption(pixels, w, @max(0, x - pad), w, caption, state.colors);
                 fill(pixels, w, x, @max(0, text_y), badge_w, @min(caption, font.height()), bg);
                 const fg = render_.utils.color(sandbox.text_color(bg));
                 _ = font.render_text(buffer, run, &fg, x + pad, text_y);
-                x += badge_w + pad;
             }
         }
     }
-    if (state.title.len > 0) {
-        const utf8 = try render_.utils.to_utf8(ctx.gpa, state.title);
-        defer ctx.gpa.free(utf8);
-        if (font.rasterize_text_run(utf8)) |run| {
-            defer run.destroy();
-            const fg = render_.utils.color(state.colors.text);
-            _ = font.render_text(buffer, run, &fg, x, text_y);
-        }
-    }
-    // The title color again from the space before the button: it covers a
-    // long title.
-    const text_end = @max(0, button_x - 2 * p);
-    fill_caption(pixels, w, text_end, w, caption, state.colors);
 
     if (button_x >= 0) {
         for (0..decoration.button_height) |by| {

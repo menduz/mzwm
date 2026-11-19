@@ -5,6 +5,10 @@
 //! theme (theme.set_gtk_theme). At the start, without GTK_THEME, kwm reads
 //! the key with ReadOne. portal_setting.zig chooses the setting.
 //!
+//! kwm also follows the key icon-theme: the bar shows the icon of the
+//! program of the focused window from this icon theme (icons.set_app_theme).
+//! GTK_THEME does not change the icon theme: kwm always reads this key.
+//!
 //! kwm uses the connection of the tray: tray.zig calls `attach` after it
 //! connects and `detach` before it disconnects. Thus kwm follows the theme
 //! only with the tray.
@@ -15,6 +19,7 @@ const log = std.log.scoped(.settings_portal);
 
 const sd = @import("sd_bus.zig");
 const theme = @import("theme.zig");
+const icons = @import("icons.zig");
 const portal_setting = @import("portal_setting.zig");
 const Context = @import("context.zig");
 
@@ -25,10 +30,19 @@ const portal_path = "/org/freedesktop/portal/desktop";
 const settings_interface = "org.freedesktop.portal.Settings";
 
 var signal_slot: ?*sd.Slot = null;
-var read_slot: ?*sd.Slot = null;
+
+/// A call of ReadOne, for a key of portal_setting.zig.
+const Read = struct {
+    key: [:0]const u8,
+    slot: ?*sd.Slot = null,
+};
+var reads = [_]Read {
+    .{ .key = portal_setting.key },
+    .{ .key = portal_setting.icon_key },
+};
 
 
-/// Follow the GTK theme on the bus `bus`.
+/// Follow the GTK theme and the icon theme on the bus `bus`.
 pub fn attach(bus: *sd.Bus) void {
     _ = sd.check(
         sd.sd_bus_match_signal_async(
@@ -38,22 +52,24 @@ pub fn attach(bus: *sd.Bus) void {
         "match SettingChanged",
     ) catch return;
 
-    // GTK_THEME comes first, as for GTK.
-    if (ctx.env.get("GTK_THEME") != null) return;
-    _ = sd.check(
-        sd.sd_bus_call_method_async(
-            bus, &read_slot, portal_name, portal_path, settings_interface,
-            "ReadOne", on_read_one, null, "ss",
-            portal_setting.namespace.ptr, portal_setting.key.ptr,
-        ),
-        "call ReadOne",
-    ) catch return;
+    for (&reads) |*read| {
+        // GTK_THEME comes first, as for GTK.
+        if (mem.eql(u8, read.key, portal_setting.key) and ctx.env.get("GTK_THEME") != null) continue;
+        _ = sd.check(
+            sd.sd_bus_call_method_async(
+                bus, &read.slot, portal_name, portal_path, settings_interface,
+                "ReadOne", on_read_one, read, "ss",
+                portal_setting.namespace.ptr, read.key.ptr,
+            ),
+            "call ReadOne",
+        ) catch continue;
+    }
 }
 
 
 pub fn detach() void {
     signal_slot = sd.sd_bus_slot_unref(signal_slot);
-    read_slot = sd.sd_bus_slot_unref(read_slot);
+    for (&reads) |*read| read.slot = sd.sd_bus_slot_unref(read.slot);
 }
 
 
@@ -67,9 +83,13 @@ fn read_variant_string(m: *sd.Message) ?[]const u8 {
 
 
 fn apply(namespace: []const u8, key: []const u8, value: []const u8) void {
-    const name = portal_setting.gtk_theme(namespace, key, value) orelse return;
-    log.info("GTK theme from the settings portal: {s}", .{ name });
-    theme.set_gtk_theme(name);
+    if (portal_setting.gtk_theme(namespace, key, value)) |name| {
+        log.info("GTK theme from the settings portal: {s}", .{ name });
+        theme.set_gtk_theme(name);
+    } else if (portal_setting.icon_theme(namespace, key, value)) |name| {
+        log.info("icon theme from the settings portal: {s}", .{ name });
+        icons.set_app_theme(name);
+    }
 }
 
 
@@ -84,15 +104,17 @@ fn on_setting_changed(m: *sd.Message, _: ?*anyopaque, _: *sd.Error) callconv(.c)
 }
 
 
-/// The reply of ReadOne: the value in a variant.
-fn on_read_one(m: *sd.Message, _: ?*anyopaque, _: *sd.Error) callconv(.c) c_int {
-    read_slot = sd.sd_bus_slot_unref(read_slot);
+/// The reply of ReadOne: the value in a variant. `userdata` is the Read.
+fn on_read_one(m: *sd.Message, userdata: ?*anyopaque, _: *sd.Error) callconv(.c) c_int {
+    const read: *Read = @ptrCast(@alignCast(userdata orelse return 0));
+    read.slot = sd.sd_bus_slot_unref(read.slot);
     if (sd.sd_bus_message_get_error(m)) |err| {
-        // Without a portal, kwm keeps the colors of the configuration.
-        log.warn("read the GTK theme from the settings portal failed: {s}", .{ err.message orelse err.name orelse "unknown error" });
+        // Without a portal, kwm keeps the colors of the configuration, and
+        // the icons of hicolor.
+        log.warn("read {s} from the settings portal failed: {s}", .{ read.key, err.message orelse err.name orelse "unknown error" });
         return 0;
     }
     const value = read_variant_string(m) orelse return 0;
-    apply(portal_setting.namespace, portal_setting.key, value);
+    apply(portal_setting.namespace, read.key, value);
     return 0;
 }

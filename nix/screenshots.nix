@@ -78,8 +78,9 @@ let
     ];
     text = ''
       export FONTCONFIG_FILE=${fontsConf}
-      # The icons of the tray items.
-      export XDG_DATA_DIRS=${adwaita-icon-theme}/share:${hicolor-icon-theme}/share
+      # The icons of the tray items, and the desktop entry and the icon of
+      # foot for the title in the bar.
+      export XDG_DATA_DIRS=${adwaita-icon-theme}/share:${hicolor-icon-theme}/share:${foot}/share
       export DBUS_SESSION_CONF=${dbus}/share/dbus-1/session.conf
       export FAKETIME_LIB=${libfaketime}/lib/libfaketime.so.1
       export PRELOAD_LIB=${preload}/lib/kwm-screenshot-preload.so

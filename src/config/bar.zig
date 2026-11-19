@@ -110,6 +110,12 @@ title: ?struct {
     /// window, or a tiled window that fills the output (one window with
     /// smart_gaps, monocle). Refer to src/kwm/decoration.zig.
     only_without_title_bar: bool = true,
+    /// The icon of the program before the title, as on a button of the task
+    /// bar of Windows 2000, 16 logical pixels as in a title bar (refer to
+    /// `title_bar_icon`): the icon of the desktop entry of the app_id, in
+    /// the icon theme of the desktop (the GSettings key icon-theme, with the
+    /// tray), else in hicolor. Refer to src/kwm/icons.zig.
+    icon: bool = true,
     click: meta.enum_struct(
         kwm.Button,
         ?kwm.BindingAction

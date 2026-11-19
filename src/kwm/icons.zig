@@ -13,6 +13,10 @@
 //! names to links to their regular icons. Only a file that is symbolic after
 //! the links gets the color.
 //!
+//! The icon of a program (`app`), for the title in the bar, is the regular
+//! icon of its desktop entry, in the icon theme of the desktop (the GSettings
+//! key icon-theme), then in hicolor and the pixmaps directories.
+//!
 //! libspng reads the PNG files, and resvg draws the SVG files at the
 //! requested size. The images and the themes stay in a cache until `reset`.
 
@@ -24,6 +28,7 @@ const log = std.log.scoped(.icons);
 const pixman = @import("pixman");
 
 const Context = @import("context.zig");
+const desktop_entry = @import("desktop_entry.zig");
 
 const ctx = Context.get();
 
@@ -41,6 +46,12 @@ const Dir = struct {
     max_size: i32 = 0,
     threshold: i32 = 2,
     type: DirType = .threshold,
+
+    /// The directory has bitmaps of exactly `size` pixels, at scale 1. The
+    /// image of such a file needs no scaling.
+    fn exact(self: *const Dir, size: i32) bool {
+        return self.scale == 1 and self.type != .scalable and self.size == size;
+    }
 
     /// DirectoryMatchesSize of the specification, for scale 1.
     fn matches(self: *const Dir, size: i32) bool {
@@ -89,6 +100,11 @@ var images: std.StringHashMapUnmanaged(?Icon) = .empty;
 
 const max_images = 256;
 
+/// The icon theme of the desktop, for the icons of the programs. Empty:
+/// only hicolor. settings_portal.zig sets it. `reset` does not change it.
+var app_theme_buffer: [256]u8 = undefined;
+var app_theme: []const u8 = "";
+
 
 /// The icon with this name for a square of `size` physical pixels, or of
 /// `symbolic_size` for a symbolic icon. The image can be larger or smaller
@@ -111,6 +127,40 @@ pub fn get(name: []const u8, theme_path: []const u8, size: i32, symbolic_size: i
         return null;
     };
     return icon;
+}
+
+
+/// The icon of the program with the app_id `app_id` for a square of `size`
+/// physical pixels: the icon of its desktop entry, or the icon with the name
+/// of the app_id. A symbolic icon has the color `color` (0xRRGGBBAA). The
+/// cache keeps the image.
+pub fn app(app_id: []const u8, size: i32, color: u32) ?Icon {
+    if (app_id.len == 0 or size <= 0) return null;
+
+    var key_buffer: [1024]u8 = undefined;
+    const key = std.fmt.bufPrint(&key_buffer, "app/{}/{x:0>8}/{s}/{s}", .{ size, color, app_theme, app_id }) catch return null;
+    if (images.get(key)) |icon| return icon;
+
+    const icon = find_app(app_id, size, color);
+    if (images.count() >= max_images) clear_images();
+    const owned_key = ctx.gpa.dupe(u8, key) catch return icon;
+    images.put(ctx.gpa, owned_key, icon) catch {
+        ctx.gpa.free(owned_key);
+        if (icon) |i| _ = i.image.unref();
+        return null;
+    };
+    return icon;
+}
+
+
+/// The icon theme of the desktop changed. The bars show the icons of the new
+/// theme.
+pub fn set_app_theme(name: []const u8) void {
+    if (mem.eql(u8, name, app_theme) or name.len > app_theme_buffer.len) return;
+    @memcpy(app_theme_buffer[0..name.len], name);
+    app_theme = app_theme_buffer[0..name.len];
+    ctx.bar_colors_changed();
+    ctx.manage_dirty(@src());
 }
 
 
@@ -165,7 +215,7 @@ fn find(name: []const u8, theme_path: []const u8, size: i32, symbolic_size: i32,
     var variant = base;
     while (true) {
         if (std.fmt.bufPrint(&symbolic_buffer, "{s}" ++ symbolic_suffix, .{ variant })) |symbolic| {
-            if (find_file(&path_buffer, symbolic, theme_path, theme_name, symbolic_size)) |path| {
+            if (find_file(&path_buffer, symbolic, theme_path, theme_name, symbolic_size, false)) |path| {
                 return load(name, path, size, symbolic_size, color);
             }
         } else |_| {}
@@ -175,13 +225,85 @@ fn find(name: []const u8, theme_path: []const u8, size: i32, symbolic_size: i32,
     // 2. The icon of the application, without the icon theme.
     variant = base;
     while (true) {
-        if (find_file(&path_buffer, variant, theme_path, "hicolor", size)) |path| {
+        if (find_file(&path_buffer, variant, theme_path, "hicolor", size, false)) |path| {
             return load(name, path, size, symbolic_size, color);
         }
         variant = shorter(variant) orelse break;
     }
     log.debug("{s} ({}): not found", .{ name, size });
     return null;
+}
+
+
+/// Find the icon of a program, and read it.
+fn find_app(app_id: []const u8, size: i32, color: u32) ?Icon {
+    var name_buffer: [max_path]u8 = undefined;
+    const name = app_icon_name(app_id, &name_buffer) orelse app_id;
+
+    // An absolute path is a file.
+    if (mem.startsWith(u8, name, "/")) return load(name, name, size, size, color);
+
+    var path_buffer: [max_path]u8 = undefined;
+    const theme_name = if (app_theme.len > 0) app_theme else "hicolor";
+    if (find_file(&path_buffer, name, "", theme_name, size, true)) |path| {
+        return load(name, path, size, size, color);
+    }
+    log.debug("icon of {s} ({s}, {}): not found", .{ app_id, name, size });
+    return null;
+}
+
+
+/// The value of Icon in the desktop entry of `app_id`, in `buffer`. The
+/// entry is the file "<app_id>.desktop" (or in lower case) in an
+/// applications directory, else the first entry with the StartupWMClass
+/// `app_id`. null: no entry, or no icon in it.
+fn app_icon_name(app_id: []const u8, buffer: []u8) ?[]const u8 {
+    var lower_buffer: [256]u8 = undefined;
+    const names, const n_names = desktop_entry.file_names(app_id, &lower_buffer);
+    var path_buffer: [max_path]u8 = undefined;
+    for (names[0..n_names]) |file_name| {
+        for (get_base_dirs()) |base| {
+            const data_dir = data_dir_of(base) orelse continue;
+            const path = exists(&path_buffer, &.{ data_dir, "/applications/", file_name, ".desktop" }) orelse continue;
+            if (read_icon(Io.Dir.cwd(), path, buffer, null)) |icon| return icon;
+        }
+    }
+
+    for (get_base_dirs()) |base| {
+        const data_dir = data_dir_of(base) orelse continue;
+        const path = exists(&path_buffer, &.{ data_dir, "/applications" }) orelse continue;
+        var dir = Io.Dir.cwd().openDir(ctx.io, path, .{ .iterate = true }) catch continue;
+        defer dir.close(ctx.io);
+        var it = dir.iterate();
+        while (it.next(ctx.io) catch null) |entry| {
+            if (!mem.endsWith(u8, entry.name, ".desktop")) continue;
+            if (read_icon(dir, entry.name, buffer, app_id)) |icon| return icon;
+        }
+    }
+    return null;
+}
+
+
+/// The data directory of the icons directory `base`, or null (~/.icons).
+fn data_dir_of(base: []const u8) ?[]const u8 {
+    if (!mem.endsWith(u8, base, "/icons")) return null;
+    return base[0 .. base.len - "/icons".len];
+}
+
+
+/// The value of Icon in the desktop entry at `path` of `dir`, in `buffer`.
+/// With `wm_class`, only an entry with this StartupWMClass gives its icon.
+fn read_icon(dir: Io.Dir, path: []const u8, buffer: []u8, wm_class: ?[]const u8) ?[]const u8 {
+    const text = dir.readFileAlloc(ctx.io, path, ctx.gpa, .limited(1 << 20)) catch return null;
+    defer ctx.gpa.free(text);
+    if (wm_class) |class| {
+        const entry_class = desktop_entry.startup_wm_class(text) orelse return null;
+        if (!mem.eql(u8, entry_class, class)) return null;
+    }
+    const icon = desktop_entry.icon(text) orelse return null;
+    if (icon.len > buffer.len) return null;
+    @memcpy(buffer[0..icon.len], icon);
+    return buffer[0..icon.len];
 }
 
 
@@ -239,7 +361,9 @@ fn recolor(image: *pixman.Image, color: u32) void {
 }
 
 
-fn find_file(buffer: []u8, name: []const u8, theme_path: []const u8, theme_name: []const u8, size: i32) ?[]const u8 {
+/// `bitmap_first`: in each theme, a bitmap of exactly `size` pixels comes
+/// before the other files. Refer to `lookup`.
+fn find_file(buffer: []u8, name: []const u8, theme_path: []const u8, theme_name: []const u8, size: i32, bitmap_first: bool) ?[]const u8 {
     // The directory of the item: files in it, or themes in it.
     if (theme_path.len > 0) {
         for (extensions) |ext| {
@@ -249,8 +373,8 @@ fn find_file(buffer: []u8, name: []const u8, theme_path: []const u8, theme_name:
 
     var visited: [16][]const u8 = undefined;
     var n_visited: usize = 0;
-    if (find_in_theme(buffer, name, theme_path, theme_name, size, &visited, &n_visited)) |path| return path;
-    if (find_in_theme(buffer, name, theme_path, "hicolor", size, &visited, &n_visited)) |path| return path;
+    if (find_in_theme(buffer, name, theme_path, theme_name, size, bitmap_first, &visited, &n_visited)) |path| return path;
+    if (find_in_theme(buffer, name, theme_path, "hicolor", size, bitmap_first, &visited, &n_visited)) |path| return path;
 
     for (get_base_dirs()) |base| {
         if (!mem.endsWith(u8, base, "/icons")) continue;
@@ -271,6 +395,7 @@ fn find_in_theme(
     theme_path: []const u8,
     theme_name: []const u8,
     size: i32,
+    bitmap_first: bool,
     visited: [][]const u8,
     n_visited: *usize,
 ) ?[]const u8 {
@@ -282,17 +407,20 @@ fn find_in_theme(
     n_visited.* += 1;
 
     const theme = get_theme(theme_name) orelse return null;
-    if (lookup(buffer, name, theme_path, theme_name, theme, size)) |path| return path;
+    if (lookup(buffer, name, theme_path, theme_name, theme, size, bitmap_first)) |path| return path;
     for (theme.inherits) |parent| {
-        if (find_in_theme(buffer, name, theme_path, parent, size, visited, n_visited)) |path| return path;
+        if (find_in_theme(buffer, name, theme_path, parent, size, bitmap_first, visited, n_visited)) |path| return path;
     }
     return null;
 }
 
 
 /// LookupIcon of the specification: a directory of the size, else the
-/// directory with the nearest size.
-fn lookup(buffer: []u8, name: []const u8, theme_path: []const u8, theme_name: []const u8, theme: *const Theme, size: i32) ?[]const u8 {
+/// directory with the nearest size. With `bitmap_first`, a PNG file of
+/// exactly the size comes first: the icon of a program in a caption is then
+/// the pixel art of the theme, without scaling, also when the theme gives
+/// the scalable directory first.
+fn lookup(buffer: []u8, name: []const u8, theme_path: []const u8, theme_name: []const u8, theme: *const Theme, size: i32, bitmap_first: bool) ?[]const u8 {
     var bases_buffer: [64][]const u8 = undefined;
     var n_bases: usize = 0;
     if (theme_path.len > 0) {
@@ -305,6 +433,15 @@ fn lookup(buffer: []u8, name: []const u8, theme_path: []const u8, theme_name: []
         n_bases += 1;
     }
     const bases = bases_buffer[0..n_bases];
+
+    if (bitmap_first) {
+        for (theme.dirs) |*dir| {
+            if (!dir.exact(size)) continue;
+            for (bases) |base| {
+                if (exists(buffer, &.{ base, "/", theme_name, "/", dir.path, "/", name, ".png" })) |path| return path;
+            }
+        }
+    }
 
     for (theme.dirs) |*dir| {
         if (!dir.matches(size)) continue;
@@ -639,4 +776,15 @@ pub fn desaturate(image: *pixman.Image) void {
             pixel.* = a << 24 | mix(r, gray, saturation) << 16 | mix(g, gray, saturation) << 8 | mix(b, gray, saturation);
         }
     }
+}
+
+
+test "Dir.exact: a bitmap of the size at scale 1" {
+    const testing = std.testing;
+    try testing.expect((Dir{ .path = "16x16/apps", .size = 16, .type = .fixed }).exact(16));
+    try testing.expect((Dir{ .path = "apps/16", .size = 16, .type = .threshold }).exact(16));
+    // A threshold directory of an other size matches 16, but it needs scaling.
+    try testing.expect(!(Dir{ .path = "apps/15", .size = 15, .type = .threshold }).exact(16));
+    try testing.expect(!(Dir{ .path = "scalable/apps", .size = 16, .min_size = 1, .max_size = 512, .type = .scalable }).exact(16));
+    try testing.expect(!(Dir{ .path = "16x16@2/apps", .size = 16, .scale = 2, .type = .fixed }).exact(16));
 }

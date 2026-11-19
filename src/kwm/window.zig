@@ -993,13 +993,19 @@ fn render_sandbox_label(self: *Self) void {
     const name = self.sandbox_name orelse return self.remove_sandbox_label();
     const output = self.output orelse return self.remove_sandbox_label();
     // A window with a title bar shows the name of its sandbox in the title
-    // bar.
+    // bar. A maximized window shows it in the bar. Refer to
+    // decoration.sandbox_name_in_bar.
     if (
         !ctx.cfg.sandbox.label
         or !self.sandbox_has_label
         or self.fullscreen != .none
         or self.content_width <= 0
         or self.has_title_bar()
+        or decoration_zig.sandbox_name_in_bar(.{
+            .maximized = self.maximize,
+            .fills_output = self.fills_output(),
+            .bar_shows_window = self.bar_shows_title(output),
+        })
     ) {
         return self.remove_sandbox_label();
     }
@@ -1021,6 +1027,17 @@ fn render_sandbox_label(self: *Self) void {
         self.content_width,
         self.outline_inset(),
     );
+}
+
+
+/// The bar of `output` shows the title of this window: the window has the
+/// focus on the output, and the bar shows a title for it. Refer to
+/// bar.draw_title.
+fn bar_shows_title(self: *Self, output: *Output) bool {
+    const area = ctx.cfg.bar.title orelse return false;
+    if (output.bar.hidden) return false;
+    if (ctx.focus_top_in(output, false) != self) return false;
+    return decoration_zig.bar_shows_title(area.only_without_title_bar, self.has_title_bar());
 }
 
 
@@ -1074,6 +1091,7 @@ fn render_title_bar(self: *Self) void {
         .width = self.width,
         .focused = self.border_focused,
         .title = self.title orelse "",
+        .app_id = self.app_id,
         .sandbox = self.title_sandbox(),
         .colors = theme.title_colors_of(theme_name, self.border_focused),
         .bevel = bevel,
@@ -1081,8 +1099,9 @@ fn render_title_bar(self: *Self) void {
 }
 
 
-/// The sandbox before the title, in the title bar and in the bar. null: no
-/// sandbox, or the host. A window on the host shows no sandbox name.
+/// The sandbox of the title, before the close button in the title bar and
+/// at the right end of the title in the bar. null: no sandbox, or the host.
+/// A window on the host shows no sandbox name.
 pub fn title_sandbox(self: *const Self) ?TitleBar.Sandbox {
     if (!self.sandbox_has_label) return null;
     const name = self.sandbox_name orelse return null;
@@ -1705,6 +1724,11 @@ fn set_appid(self: *Self, app_id: ?[]const u8) void {
     }
     if (app_id) |appid| {
         self.app_id = ctx.gpa.dupe(u8, appid) catch return;
+    }
+
+    // The bar shows the icon of the program before the title.
+    if (comptime build_options.bar_enabled) {
+        if (self.output) |output| output.bar.damage(.title);
     }
 }
 
