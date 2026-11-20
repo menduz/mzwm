@@ -1277,6 +1277,11 @@ fn wl_pointer_listener(wl_pointer: *wl.Pointer, event: wl.Pointer.Event, seat: *
                 if (TitleBar.pointer_button(surface, seat.pointer_surface_x, seat.pointer_surface_y, pressed)) return;
             }
 
+            // A click on the label of a sandbox moves it to the other corner.
+            if (comptime build_options.bar_enabled) {
+                if (SandboxLabel.pointer_button(surface, pressed)) return;
+            }
+
             // The title bar or the border of a floating window, or the title
             // bar of a tiled window: a press moves the window in the next
             // manage sequence. A release before it ends the move.
@@ -1327,12 +1332,6 @@ fn wl_pointer_listener(wl_pointer: *wl.Pointer, event: wl.Pointer.Event, seat: *
             seat.pointer_surface_x = data.surface_x.toInt();
             seat.pointer_surface_y = data.surface_y.toInt();
             seat.hover_widget();
-
-            // The pointer comes near the label of a sandbox: the label moves
-            // to the other corner of its window.
-            if (comptime build_options.bar_enabled) {
-                if (data.surface) |surface| _ = SandboxLabel.pointer_enter(surface);
-            }
         },
         .motion => |data| {
             seat.pointer_surface_x = data.surface_x.toInt();
@@ -1352,7 +1351,7 @@ fn wl_pointer_listener(wl_pointer: *wl.Pointer, event: wl.Pointer.Event, seat: *
                 const target = seat.widget_under_pointer() orelse return;
                 switch (target.area) {
                     .widget => |w| widgets.scroll(w.side, w.index, data.value.toDouble()),
-                    .layout => {},
+                    .layout, .sandbox => {},
                     .tray => |ptr| if (comptime build_options.tray_enabled) {
                         const tray = @import("tray.zig");
                         if (tray.find(ptr)) |item| tray.scroll(item, data.value.toDouble());
@@ -1369,9 +1368,24 @@ fn widget_under_pointer(self: *const Self) ?tooltip.Target {
     const surface = self.pointer_surface orelse return null;
     var it = ctx.outputs.safeIterator(.forward);
     while (it.next()) |output| {
-        if (output.bar.widget_at(surface, self.pointer_surface_x, self.pointer_surface_y)) |target| return target;
+        if (output.bar.widget_at(self, surface, self.pointer_surface_x, self.pointer_surface_y)) |target| return target;
     }
-    return null;
+
+    // The name of a sandbox in a title bar, or the label of a sandbox. The
+    // tooltip is below the pointer: tooltip.zig reads the position of the
+    // pointer when it draws.
+    const window =
+        TitleBar.sandbox_window_at(surface, self.pointer_surface_x, self.pointer_surface_y)
+        orelse SandboxLabel.window_at(surface)
+        orelse return null;
+    const output = window.output orelse return null;
+    return .{
+        .bar = &output.bar,
+        .area = .{ .sandbox = .{ .window = window, .seat = self } },
+        .x = self.pointer_position.x,
+        .pointer_x = self.pointer_position.x,
+        .pointer_y = self.pointer_position.y,
+    };
 }
 
 

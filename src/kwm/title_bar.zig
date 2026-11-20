@@ -69,6 +69,9 @@ pressed: bool = false,
 /// A release on the close button asks to close the window. The next manage
 /// sequence closes it.
 close_requested: bool = false,
+/// The place of the name of the sandbox, in logical pixels of the title bar.
+/// The pointer on it shows the tooltip of the sandbox. null: no name.
+sandbox_rect: ?decoration.Rect = null,
 
 /// What the last `draw` drew.
 drawn: ?struct {
@@ -242,6 +245,7 @@ fn draw(self: *Self, bar: *Bar, state: State, icon: ?*pixman.Image) !void {
     }
     const text_y = @divFloor(caption - font.height(), 2);
     const text_x = utils.logical2physics(i32, decoration.title_x(icon != null), scale);
+    self.sandbox_rect = null;
     if (state.title.len > 0) {
         const utf8 = try render_.utils.to_utf8(ctx.gpa, state.title);
         defer ctx.gpa.free(utf8);
@@ -272,6 +276,12 @@ fn draw(self: *Self, bar: *Bar, state: State, icon: ?*pixman.Image) !void {
                 fill(pixels, w, x, @max(0, text_y), badge_w, @min(caption, font.height()), bg);
                 const fg = render_.utils.color(sandbox.text_color(bg));
                 _ = font.render_text(buffer, run, &fg, x + pad, text_y);
+                self.sandbox_rect = .{
+                    .x = utils.physics2logical(i32, x, scale),
+                    .y = 0,
+                    .width = utils.physics2logical(i32, badge_w, scale),
+                    .height = decoration.caption_height,
+                };
             }
         }
     }
@@ -321,6 +331,16 @@ fn find(surface: *wl.Surface) ?struct { window: *Window, title_bar: *Self } {
         if (title_bar.wl_surface == surface) return .{ .window = window, .title_bar = title_bar };
     }
     return null;
+}
+
+
+/// The window whose title bar has the surface `surface`, when `x`, `y` (in
+/// logical pixels) is on the name of the sandbox. The pointer there shows
+/// the tooltip of the sandbox.
+pub fn sandbox_window_at(surface: *wl.Surface, x: i32, y: i32) ?*Window {
+    const found = find(surface) orelse return null;
+    const rect = found.title_bar.sandbox_rect orelse return null;
+    return if (rect.contains(x, y)) found.window else null;
 }
 
 

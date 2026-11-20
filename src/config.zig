@@ -217,6 +217,10 @@ pub const Config = struct {
     sandbox: struct {
         /// Show a label with the name of the sandbox at the top right corner
         /// of each window of a sandbox. A window on the host has no label.
+        /// The pointer on the label (or on the name in a title bar or in the
+        /// bar) shows the capabilities and the mounts of the sandbox; a click
+        /// on the label moves it to the other corner. Refer to
+        /// src/kwm/sandbox_info.zig.
         label: bool = true,
     } = .{},
 

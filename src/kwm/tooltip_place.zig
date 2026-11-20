@@ -97,6 +97,73 @@ pub fn size(
 }
 
 
+/// The tooltip of the name of a sandbox, on a window: below the cursor, or
+/// above the pointer when the space below is too small. It starts at the
+/// pointer, and it stays on the output. A tooltip that is too high for both
+/// is at the right of the cursor, or at the left of the pointer. The
+/// tooltip does not cover the pointer: the pointer on the tooltip leaves
+/// the name, and the tooltip goes away.
+pub fn near_pointer(t: struct {
+    pointer_x: i32,
+    pointer_y: i32,
+    width: i32,
+    height: i32,
+    output_x: i32,
+    output_y: i32,
+    output_width: i32,
+    output_height: i32,
+    /// The size of the cursor.
+    cursor: i32,
+}) Position {
+    const right = t.output_x + t.output_width;
+    const bottom = t.output_y + t.output_height;
+    const below = t.pointer_y + t.cursor;
+    const above = t.pointer_y - t.height;
+    if (below + t.height <= bottom or above >= t.output_y) {
+        const x = @max(@min(t.pointer_x, right - t.width), t.output_x);
+        return .{ .x = x, .y = if (below + t.height <= bottom) below else above };
+    }
+    // Beside the pointer, from the top of the output.
+    const y = @max(@min(t.pointer_y, bottom - t.height), t.output_y);
+    const beside = t.pointer_x + t.cursor;
+    if (beside + t.width <= right) return .{ .x = beside, .y = y };
+    return .{ .x = @max(t.output_x, t.pointer_x - 1 - t.width), .y = y };
+}
+
+
+test "near_pointer: below the cursor, from the pointer" {
+    const p = near_pointer(.{
+        .pointer_x = 100, .pointer_y = 50, .width = 200, .height = 300,
+        .output_x = 0, .output_y = 0, .output_width = 1280, .output_height = 720, .cursor = 24,
+    });
+    try testing.expectEqual(Position{ .x = 100, .y = 74 }, p);
+}
+
+test "near_pointer: above the pointer near the bottom, inside the output at the right" {
+    const q = near_pointer(.{
+        .pointer_x = 1250, .pointer_y = 600, .width = 200, .height = 300,
+        .output_x = 0, .output_y = 0, .output_width = 1280, .output_height = 720, .cursor = 24,
+    });
+    try testing.expectEqual(Position{ .x = 1080, .y = 300 }, q);
+}
+
+test "near_pointer: a high tooltip is beside the pointer, not on it" {
+    // At the right of the cursor.
+    const p = near_pointer(.{
+        .pointer_x = 300, .pointer_y = 40, .width = 480, .height = 720,
+        .output_x = 0, .output_y = 0, .output_width = 1280, .output_height = 720, .cursor = 24,
+    });
+    try testing.expectEqual(Position{ .x = 324, .y = 0 }, p);
+    // Near the right edge: at the left of the pointer.
+    const q = near_pointer(.{
+        .pointer_x = 1140, .pointer_y = 8, .width = 480, .height = 700,
+        .output_x = 0, .output_y = 0, .output_width = 1280, .output_height = 720, .cursor = 24,
+    });
+    try testing.expectEqual(Position{ .x = 659, .y = 8 }, q);
+    try testing.expect(q.x + 480 <= 1140);
+}
+
+
 test "size: a small tooltip has the size of its text" {
     try testing.expectEqual(Size{ .width = 120, .height = 70, .lines = 3 }, size(100, 3, 20, 10, 1920, 1080));
 }

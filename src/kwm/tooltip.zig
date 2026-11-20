@@ -1,5 +1,5 @@
-//! The tooltip of the bar widgets, of the layout area and of the tray items.
-//! There is one tooltip for all outputs.
+//! The tooltip of the bar widgets, of the layout area, of the tray items and
+//! of the names of the sandboxes. There is one tooltip for all outputs.
 //!
 //! The tooltip of a selected tag and of the layout area is the menu of the
 //! layouts of `cycle_layouts`: each line shows the mark of the layout and
@@ -16,6 +16,10 @@
 //! (dunst) and the menus (rofi) cover the tooltip. A new layer surface is
 //! above the other layer surfaces, and each tooltip is a new surface. Without
 //! wlr-layer-shell, the surface is a shell surface.
+//!
+//! The name of a sandbox (in the bar, in a title bar, or on the label of a
+//! window) has a tooltip with the capabilities and the mounts of the
+//! sandbox, below the pointer. Refer to sandbox_info.zig.
 //!
 //! A script widget can give a click command for each line of its tooltip.
 //! Then the tooltip is below the pointer, and stays `leave_delay`
@@ -48,6 +52,9 @@ const types = @import("types.zig");
 const tooltip_place = @import("tooltip_place.zig");
 const tooltip_line = @import("tooltip_line.zig");
 const theme = @import("theme.zig");
+const sandbox_info = @import("sandbox_info.zig");
+const Window = @import("window.zig");
+const Seat = @import("seat.zig");
 
 const ctx = Context.get();
 
@@ -60,6 +67,9 @@ pub const Area = union(enum) {
     layout,
     /// The tooltip of a tray item.
     tray: *tray.Item,
+    /// The name of the sandbox of a window. The tooltip is below the
+    /// pointer of the seat, on the output of the bar.
+    sandbox: struct { window: *Window, seat: *const Seat },
 };
 
 pub const Target = struct {
@@ -414,6 +424,8 @@ pub fn render() void {
 
     var layout_buffer: [256]u8 = undefined;
     var tray_buffer: [1024]u8 = undefined;
+    var sandbox_text: std.Io.Writer.Allocating = .init(ctx.gpa);
+    defer sandbox_text.deinit();
     const text = switch (t.area) {
         .widget => |w| blk: {
             const states = widgets.states(w.side);
@@ -424,6 +436,15 @@ pub fn render() void {
         .tray => |ptr| if (comptime build_options.tray_enabled)
                 (tray.find(ptr) orelse return hide()).tooltip(&tray_buffer)
             else "",
+        .sandbox => |s| blk: {
+            const window = find_window(s.window) orelse return hide();
+            const name = window.sandbox_name orelse return hide();
+            sandbox_info.write_of_process(ctx.gpa, &sandbox_text.writer, name, window.pid) catch |err| {
+                log.err("sandbox tooltip failed: {}", .{ err });
+                return hide();
+            };
+            break :blk sandbox_text.written();
+        },
     };
     if (text.len == 0) return hide();
 
@@ -448,6 +469,16 @@ pub fn deinit() void {
     target = null;
     visible = false;
     hide();
+}
+
+
+/// The window `ptr`, if it is still a window.
+fn find_window(ptr: *Window) ?*Window {
+    var it = ctx.windows.safeIterator(.forward);
+    while (it.next()) |window| {
+        if (window == ptr) return window;
+    }
+    return null;
 }
 
 
@@ -566,12 +597,26 @@ fn draw(s: *Surface, t: *const Target, text: []const u8) !void {
         y += line_height;
     }
 
-    // Below a bar at the top, and above a bar at the bottom. Refer to
-    // tooltip_place.zig.
+    // Below a bar at the top, and above a bar at the bottom. The tooltip of
+    // a sandbox name is below the pointer. Refer to tooltip_place.zig.
     const output = bar.output;
     const logical_w = utils.physics2logical(i32, w, bar.scale);
     const logical_h = utils.physics2logical(i32, h, bar.scale);
-    const position = tooltip_place.place(.{
+    // river sends the position of the pointer in each manage sequence, and a
+    // manage sequence comes before this render sequence: the position is
+    // new. The position of the hover can be old, because a motion alone
+    // starts no manage sequence.
+    const position = if (t.area == .sandbox) tooltip_place.near_pointer(.{
+        .pointer_x = t.area.sandbox.seat.pointer_position.x,
+        .pointer_y = t.area.sandbox.seat.pointer_position.y,
+        .width = logical_w,
+        .height = logical_h,
+        .output_x = output.x,
+        .output_y = output.y,
+        .output_width = output.width,
+        .output_height = output.height,
+        .cursor = cursor_size(),
+    }) else tooltip_place.place(.{
         .pointer_x = t.pointer_x,
         .pointer_y = t.pointer_y,
         .area_x = t.x,

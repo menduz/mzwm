@@ -60,6 +60,10 @@ static_component_damaged: bool = true,
 dynamic_component_damaged: bool = true,
 background_damaged: bool = true,
 hidden: bool,
+/// The name of the sandbox in the title area, in physical pixels of the
+/// dynamic component, and its window. The pointer on it shows the tooltip of
+/// the sandbox. null: no name.
+sandbox_cell: ?struct { x0: i32, x1: i32, window: *Window } = null,
 
 dynamic_splits_buffer: [@typeInfo(types.BarArea).@"enum".fields.len-2]i32 = undefined,
 static_splits: std.ArrayList(i32) = .empty,
@@ -292,10 +296,11 @@ pub fn over_tray(self: *const Self, surface: *wl.Surface, surface_x: i32) bool {
 }
 
 
-/// The widget, the layout area or the selected tag under a pointer at
-/// (`surface_x`, `surface_y`) on `surface`, for the tooltip and for scroll
-/// events.
-pub fn widget_at(self: *Self, surface: *wl.Surface, surface_x: i32, surface_y: i32) ?tooltip.Target {
+/// The widget, the layout area, the name of a sandbox or the selected tag
+/// under a pointer at (`surface_x`, `surface_y`) on `surface`, for the
+/// tooltip and for scroll events. `seat` gives the pointer to the tooltip
+/// of a sandbox name.
+pub fn widget_at(self: *Self, seat: *const Seat, surface: *wl.Surface, surface_x: i32, surface_y: i32) ?tooltip.Target {
     if (self.hidden) return null;
     if (surface == self.static_component.wl_surface) return self.selected_tag_at(surface_x, surface_y);
     if (surface != self.dynamic_component.wl_surface) return null;
@@ -314,6 +319,9 @@ pub fn widget_at(self: *Self, surface: *wl.Surface, surface_x: i32, surface_y: i
         if (ctx.cfg.bar.layout != null and splits.len >= 2 and x >= splits[0] and x < splits[1]) {
             break :blk .{ .layout, splits[0] };
         }
+        if (self.sandbox_cell) |cell| if (x >= cell.x0 and x < cell.x1) {
+            break :blk .{ .{ .sandbox = .{ .window = cell.window, .seat = seat } }, cell.x0 };
+        };
         return null;
     };
     const surface_left = self.output.x + utils.physics2logical(i32, self.static_component_width(), self.scale);
@@ -1063,6 +1071,7 @@ fn render_dynamic_component(self: *Self) void {
 /// at the right of `end`: the title stops there, and the gradient of a
 /// caption ends there, as in a title bar.
 fn draw_title(self: *Self, buffer: *render_.Buffer, start: i16, end: i16) void {
+    self.sandbox_cell = null;
     if (end <= start) return;
     const area = ctx.cfg.bar.title orelse return;
     const window = ctx.focus_top_in(self.output, false) orelse return;
@@ -1168,6 +1177,7 @@ fn draw_title(self: *Self, buffer: *render_.Buffer, start: i16, end: i16) void {
             y,
         );
         text_end = @max(start, cell_x - @as(i16, @intCast(@divFloor(pad, 2))));
+        self.sandbox_cell = .{ .x0 = cell_x, .x1 = cell_x + cell_w, .window = window };
     }
 
     // A long title stops before the name of the sandbox.
