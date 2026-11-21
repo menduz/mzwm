@@ -103,9 +103,9 @@ pub const Item = struct {
     fn create(service: []const u8, path: []const u8) !*Item {
         const self = try ctx.gpa.create(Item);
         errdefer ctx.gpa.destroy(self);
-        const service_z = try ctx.gpa.dupeZ(u8, service);
+        const service_z = try ctx.gpa.dupeSentinel(u8, service, 0);
         errdefer ctx.gpa.free(service_z);
-        const path_z = try ctx.gpa.dupeZ(u8, path);
+        const path_z = try ctx.gpa.dupeSentinel(u8, path, 0);
         errdefer ctx.gpa.free(path_z);
         const key = try mem.concatWithSentinel(ctx.gpa, u8, &.{ service, path }, 0);
         self.* = .{
@@ -674,11 +674,10 @@ fn become_watcher() void {
 /// Register as a host with the other watcher, and get its items.
 fn become_host() void {
     const b = bus orelse return;
-    const host_name = std.fmt.bufPrintZ(
+    const host_name = std.fmt.bufPrintSentinel(
         &host_name_buffer,
         "org.kde.StatusNotifierHost-{}",
-        .{ std.c.getpid() },
-    ) catch unreachable;
+        .{ std.c.getpid() }, 0) catch unreachable;
     _ = sd.sd_bus_request_name_async(b, null, host_name, 0, null, null);
     _ = sd.sd_bus_call_method_async(
         b, null, watcher_name, watcher_path, watcher_interface, "RegisterStatusNotifierHost",

@@ -17,7 +17,7 @@ const kwm = @import("kwm");
 const flags = @import("flags");
 const Config = @import("config");
 
-var runtime_log_level: std.log.Level = if (builtins.mode == .Debug) .debug else .info;
+var runtime_log_level: std.log.Level = if (builtins.mode == .debug) .debug else .info;
 const usage =
     \\usage: kwm [options] [bindings [modifiers]]
     \\  -h,-help               Print this help message and exit.

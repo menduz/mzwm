@@ -272,7 +272,7 @@ fn read_theme_file(name: []const u8, buffer: []u8) ?[]const u8 {
 
 fn read_file(path_buffer: []u8, buffer: []u8, dir: []const u8, sub: []const u8, name: []const u8) ?[]const u8 {
     if (dir.len == 0) return null;
-    const path = fmt.bufPrintZ(path_buffer, "{s}{s}/{s}/xfwm4/themerc", .{ dir, sub, name }) catch return null;
+    const path = fmt.bufPrintSentinel(path_buffer, "{s}{s}/{s}/xfwm4/themerc", .{ dir, sub, name }, 0) catch return null;
 
     const fd = posix.openZ(path, .{ .ACCMODE = .RDONLY, .CLOEXEC = true }, 0) catch return null;
     defer posix.close(fd);

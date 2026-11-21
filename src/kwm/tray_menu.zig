@@ -204,8 +204,8 @@ fn start(bus: *sd.Bus, service: []const u8, path: []const u8, title: []const u8,
     };
     menu = m;
     const a = m.arena.allocator();
-    m.service = try a.dupeZ(u8, service);
-    m.path = try a.dupeZ(u8, path);
+    m.service = try a.dupeSentinel(u8, service, 0);
+    m.path = try a.dupeSentinel(u8, path, 0);
     m.title = try a.dupe(u8, title);
 
     // The item can fill the menu now. Errors do not matter.
@@ -471,7 +471,7 @@ fn show(m: *Menu) !void {
             rest = rest[1..];
         }
         try out.writer.writeAll(rest);
-        argv[i] = (try a.dupeZ(u8, out.written())).ptr;
+        argv[i] = (try a.dupeSentinel(u8, out.written(), 0)).ptr;
     }
     if (argv.len == 0) return error.NoMenuCommand;
 

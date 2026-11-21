@@ -174,7 +174,7 @@ test "width: the bars and one border more than bars" {
 
 test "width: a bar with more columns than the glyph width has a pixel for each column" {
     const one: []const Level = &.{.{ .percent = 0 }};
-    const cores: []const Level = &(.{Level{ .percent = 0 }} ** 16);
+    const cores: []const Level = &@as([16]Level, @splat(.{ .percent = 0 }));
     try testing.expectEqual(@as(i32, 1 + 6 + 1 + 16 + 1), width(&test_levels(&.{ one, cores }), 6));
     // Fewer columns than the glyph width: the bar stays a glyph wide.
     try testing.expectEqual(@as(i32, 1 + 6 + 1 + 6 + 1), width(&test_levels(&.{ one, cores[0..4] }), 6));
@@ -263,7 +263,7 @@ test "Levels.eql: the same columns in other bars" {
 
 test "Levels.add_bar: at most max_columns columns" {
     var levels: Levels = .{};
-    const many: []const Level = &(.{Level{ .percent = 0 }} ** 200);
+    const many: []const Level = &@as([200]Level, @splat(.{ .percent = 0 }));
     levels.add_bar(many);
     levels.add_bar(many);
     levels.add_bar(many);

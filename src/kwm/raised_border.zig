@@ -52,7 +52,7 @@ const Strip = enum {
     frame_right,
 };
 
-const strip_count = @typeInfo(Strip).@"enum".fields.len;
+const strip_count = @typeInfo(Strip).@"enum".field_names.len;
 
 
 wl_surface: *wl.Surface,

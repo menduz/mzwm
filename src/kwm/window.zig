@@ -519,7 +519,7 @@ fn ask_kill(self: *Self) !void {
     const linux = std.os.linux;
 
     var path_buffer: [32]u8 = undefined;
-    const exe_path = try std.fmt.bufPrintZ(&path_buffer, "/proc/{}/exe", .{ self.pid });
+    const exe_path = try std.fmt.bufPrintSentinel(&path_buffer, "/proc/{}/exe", .{ self.pid }, 0);
     var exe_buffer: [std.fs.max_path_bytes]u8 = undefined;
     const rc = linux.readlink(exe_path, &exe_buffer, exe_buffer.len);
     const exe = if (linux.errno(rc) == .SUCCESS) force_close.exe_name(exe_buffer[0..rc]) else "";
@@ -529,7 +529,7 @@ fn ask_kill(self: *Self) !void {
         return;
     }
 
-    const stat_path = try std.fmt.bufPrintZ(&path_buffer, "/proc/{}/stat", .{ self.pid });
+    const stat_path = try std.fmt.bufPrintSentinel(&path_buffer, "/proc/{}/stat", .{ self.pid }, 0);
     var stat_buffer: [1024]u8 = undefined;
     const fd = try posix.openZ(stat_path, .{ .ACCMODE = .RDONLY, .CLOEXEC = true }, 0);
     defer posix.close(fd);
@@ -841,7 +841,7 @@ fn render_raised_border(self: *Self) void {
             return;
         }
         if (self.raised_border == null) {
-            self.raised_border = undefined;
+            self.raised_border = @as(RaisedBorder, undefined);
             self.raised_border.?.init(self) catch |err| {
                 self.raised_border = null;
                 log.err("<{*}> init raised border failed: {}", .{ self, err });
@@ -870,7 +870,7 @@ fn render_raised_border(self: *Self) void {
     }
 
     if (self.raised_border == null) {
-        self.raised_border = undefined;
+        self.raised_border = @as(RaisedBorder, undefined);
         self.raised_border.?.init(self) catch |err| {
             self.raised_border = null;
             log.err("<{*}> init raised border failed: {}", .{ self, err });
@@ -1025,7 +1025,7 @@ fn render_sandbox_label(self: *Self) void {
     }
 
     if (self.sandbox_label == null) {
-        self.sandbox_label = undefined;
+        self.sandbox_label = @as(SandboxLabel, undefined);
         self.sandbox_label.?.init(self) catch |err| {
             self.sandbox_label = null;
             log.err("<{*}> init sandbox label failed: {}", .{ self, err });
@@ -1090,7 +1090,7 @@ fn render_title_bar(self: *Self) void {
     if (!self.has_title_bar() or self.width <= 0) return self.remove_title_bar();
 
     if (self.title_bar == null) {
-        self.title_bar = undefined;
+        self.title_bar = @as(TitleBar, undefined);
         self.title_bar.?.init(self) catch |err| {
             self.title_bar = null;
             log.err("<{*}> init title bar failed: {}", .{ self, err });
@@ -1841,7 +1841,7 @@ fn swallow(self: *Self, window: *Self) void {
         }
     }
 
-    self.swallowing_border = undefined;
+    self.swallowing_border = @as(CustomBorder, undefined);
     self.swallowing_border.?.init(self) catch |err| {
         self.swallowing_border = null;
         log.err("<{*}> init custom decoration failed: {}", .{ self, err });

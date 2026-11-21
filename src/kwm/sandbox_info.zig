@@ -99,7 +99,7 @@ pub fn write_of_process(allocator: mem.Allocator, w: *Io.Writer, name: []const u
             break :mounts;
         }
         var path_buffer: [64]u8 = undefined;
-        const path = std.fmt.bufPrintZ(&path_buffer, "/proc/{}/mountinfo", .{ pid }) catch break :mounts;
+        const path = std.fmt.bufPrintSentinel(&path_buffer, "/proc/{}/mountinfo", .{ pid }, 0) catch break :mounts;
         mountinfo = common.read_file_alloc(allocator, path, 1 << 20) catch {
             no_mounts = "unknown, the process stopped";
             break :mounts;
@@ -459,9 +459,9 @@ test "write: a sandbox without configuration, and mounts that kwm cannot see" {
 test "write_list: long lists continue on the next line" {
     var out: Io.Writer.Allocating = .init(testing.allocator);
     defer out.deinit();
-    const items = [_][]const u8{ "a" ** 30, "b" ** 30, "c" ** 10 };
+    const items = [_][]const u8{ &@as([30]u8, @splat('a')), &@as([30]u8, @splat('b')), &@as([10]u8, @splat('c')) };
     try write_list(&out.writer, "allowed: ", &items);
-    try testing.expectEqualStrings("allowed: " ++ "a" ** 30 ++ ",\n  " ++ "b" ** 30 ++ ", " ++ "c" ** 10 ++ "\n", out.written());
+    try testing.expectEqualStrings("allowed: " ++ &@as([30]u8, @splat('a')) ++ ",\n  " ++ &@as([30]u8, @splat('b')) ++ ", " ++ &@as([10]u8, @splat('c')) ++ "\n", out.written());
 }
 
 test "backend: from the block of the sandbox" {

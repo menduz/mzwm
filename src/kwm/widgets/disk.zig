@@ -78,7 +78,7 @@ pub fn update(cfg: anytype, out: *common.Output) !void {
 
 fn usage(mount_point: []const u8) !storage.Usage {
     var path_buffer: [max_path]u8 = undefined;
-    const path = try fmt.bufPrintZ(&path_buffer, "{s}", .{ mount_point });
+    const path = try fmt.bufPrintSentinel(&path_buffer, "{s}", .{ mount_point }, 0);
     var st: Statvfs = undefined;
     if (statvfs(path.ptr, &st) != 0) return error.Statvfs;
     return .init(
@@ -174,7 +174,7 @@ fn device_key(path: []const u8, buffer: []u8) ?[]const u8 {
 /// The path without links, or null.
 fn real_path(path: []const u8, buffer: *[max_path]u8) ?[]const u8 {
     var path_buffer: [max_path]u8 = undefined;
-    const path_z = fmt.bufPrintZ(&path_buffer, "{s}", .{ path }) catch return null;
+    const path_z = fmt.bufPrintSentinel(&path_buffer, "{s}", .{ path }, 0) catch return null;
     const real = std.c.realpath(path_z.ptr, buffer) orelse return null;
     return mem.span(real);
 }

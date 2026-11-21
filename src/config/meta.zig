@@ -6,23 +6,48 @@ const Type = std.builtin.Type;
 const constants = @import("constants.zig");
 
 
+// Group the parallel reflection arrays for configuration field transforms.
+pub fn fieldInfos(comptime T: type) [std.meta.fieldNames(T).len]FieldInfo(T) {
+    const info = switch (@typeInfo(T)) {
+        .@"struct" => |value| value,
+        .@"union" => |value| value,
+        else => @compileError("expected a struct or union"),
+    };
+    var result: [info.field_names.len]FieldInfo(T) = undefined;
+    for (info.field_names, info.field_types, info.field_attrs, &result) |name, ty, attrs, *field| {
+        field.* = .{ .name = name, .type = ty, .attrs = attrs };
+    }
+    return result;
+}
+
+fn FieldInfo(comptime T: type) type {
+    return struct {
+        name: [:0]const u8,
+        type: type,
+        attrs: switch (@typeInfo(T)) {
+            .@"struct" => Type.Struct.FieldAttributes,
+            .@"union" => Type.Union.FieldAttributes,
+            else => @compileError("expected a struct or union"),
+        },
+    };
+}
+
 // turn packed struct to normal struct
 pub fn unpacked(comptime T: type) type {
-    const info = @typeInfo(T).@"struct";
-    const fields = info.fields;
+    const fields = fieldInfos(T);
     var len: usize = 0;
     var names: [fields.len][]const u8 = undefined;
     var types: [fields.len]type = undefined;
-    var attrs: [fields.len]Type.StructField.Attributes = undefined;
+    var attrs: [fields.len]Type.Struct.FieldAttributes = undefined;
     for (fields) |field| {
         if (field.name[0] == '_') continue;
 
         names[len] = field.name;
         types[len] = field.@"type";
-        attrs[len] = Type.StructField.Attributes {
-            .@"comptime" = field.is_comptime,
-            .@"align" = field.alignment,
-            .default_value_ptr = field.default_value_ptr,
+        attrs[len] = Type.Struct.FieldAttributes {
+            .@"comptime" = field.attrs.@"comptime",
+            .@"align" = field.attrs.@"align",
+            .default_value_ptr = field.attrs.default_value_ptr,
         };
         len += 1;
     }
@@ -40,12 +65,12 @@ pub fn unpacked(comptime T: type) type {
 pub fn add_default(comptime T: type, comptime object: T) type {
     switch (@typeInfo(T)) {
         .@"struct" => |info| {
-            const len = info.fields.len;
+            const len = fieldInfos(T).len;
             var names: [len][]const u8 = undefined;
             var types: [len]type = undefined;
-            var attrs: [len]Type.StructField.Attributes = undefined;
+            var attrs: [len]Type.Struct.FieldAttributes = undefined;
 
-            for (0.., info.fields) |i, field| {
+            for (0.., fieldInfos(T)) |i, field| {
                 const new_T = add_default(field.type, @field(object, field.name));
                 const default: new_T = switch (@typeInfo(new_T)) {
                     .@"struct" => .{},
@@ -58,9 +83,9 @@ pub fn add_default(comptime T: type, comptime object: T) type {
 
                 names[i] = field.name;
                 types[i] = new_T;
-                attrs[i] = Type.StructField.Attributes {
-                    .@"comptime" = field.is_comptime,
-                    .@"align" = field.alignment,
+                attrs[i] = Type.Struct.FieldAttributes {
+                    .@"comptime" = field.attrs.@"comptime",
+                    .@"align" = field.attrs.@"align",
                     .default_value_ptr = @ptrCast(&default),
                 };
             }
@@ -78,14 +103,14 @@ pub fn add_default(comptime T: type, comptime object: T) type {
 pub fn enum_struct(comptime E: type, comptime T: type) type {
     const info = @typeInfo(E).@"enum";
 
-    const len = info.fields.len;
+    const len = info.field_names.len;
     var names: [len][]const u8 = undefined;
     var types: [len]type = undefined;
-    var attrs: [len]Type.StructField.Attributes = undefined;
-    for (0.., info.fields) |i, field| {
-        names[i] = field.name;
+    var attrs: [len]Type.Struct.FieldAttributes = undefined;
+    for (0.., info.field_names) |i, name| {
+        names[i] = name;
         types[i] = T;
-        attrs[i] = Type.StructField.Attributes {
+        attrs[i] = Type.Struct.FieldAttributes {
             .@"comptime" = false,
             .@"align" = @alignOf(T),
             .default_value_ptr = switch (@typeInfo(T)) {
@@ -118,7 +143,7 @@ pub fn enum_struct(comptime E: type, comptime T: type) type {
         &(.{ "getter" } ++ names),
         &(.{ Getter } ++ types),
         &(.{
-            Type.StructField.Attributes {
+            Type.Struct.FieldAttributes {
                 .@"comptime" = false,
                 .@"align" = @alignOf(T),
                 .default_value_ptr = &Getter.instance
@@ -138,18 +163,17 @@ pub fn make_optional(comptime T: type) type {
 
 
 pub fn make_fields_optional(comptime T: type) type {
-    const info = @typeInfo(T).@"struct";
 
-    const len = info.fields.len;
+    const len = fieldInfos(T).len;
     var names: [len][]const u8 = undefined;
     var types: [len]type = undefined;
-    var attrs: [len]Type.StructField.Attributes = undefined;
-    for (0.., info.fields) |i, field| {
+    var attrs: [len]Type.Struct.FieldAttributes = undefined;
+    for (0.., fieldInfos(T)) |i, field| {
         const new_T = make_optional(field.type);
         const default_value: new_T = null;
         names[i] = field.name;
         types[i] = new_T;
-        attrs[i] = Type.StructField.Attributes {
+        attrs[i] = Type.Struct.FieldAttributes {
             .@"comptime" = false,
             .@"align" = @alignOf(new_T),
             .default_value_ptr = &default_value,
@@ -161,15 +185,14 @@ pub fn make_fields_optional(comptime T: type) type {
 
 
 pub fn field_mask(comptime T: type) type {
-    const info = @typeInfo(T).@"struct";
 
-    const len = info.fields.len;
+    const len = fieldInfos(T).len;
     var names: [len][]const u8 = undefined;
-    var attrs: [len]Type.StructField.Attributes = undefined;
-    for (0.., info.fields) |i, field| {
+    var attrs: [len]Type.Struct.FieldAttributes = undefined;
+    for (0.., fieldInfos(T)) |i, field| {
         const default_value = false;
         names[i] = field.name;
-        attrs[i] = Type.StructField.Attributes {
+        attrs[i] = Type.Struct.FieldAttributes {
             .@"comptime" = false,
             .@"align" = @alignOf(bool),
             .default_value_ptr = &default_value,
@@ -183,7 +206,7 @@ pub fn field_mask(comptime T: type) type {
 pub fn override(base: anytype, new: anytype) @TypeOf(base) {
     const T = @TypeOf(base);
     var result: T = undefined;
-    inline for (@typeInfo(T).@"struct".fields) |field_info| {
+    inline for (fieldInfos(T)) |field_info| {
         const new_field = @field(new, field_info.name);
         const base_field = @field(base, field_info.name);
         @field(result, field_info.name) =
@@ -199,8 +222,8 @@ pub fn override(base: anytype, new: anytype) @TypeOf(base) {
 
 pub fn deep_equal(comptime T: type, a: *const T, b: *const T) bool {
     return switch (@typeInfo(T)) {
-        .@"struct" => |info| blk: {
-            inline for (info.fields) |field| {
+        .@"struct" => blk: {
+            inline for (fieldInfos(T)) |field| {
                 if (!deep_equal(
                     field.type,
                     @ptrCast(&@field(a, field.name)),
@@ -243,7 +266,7 @@ pub fn deep_equal(comptime T: type, a: *const T, b: *const T) bool {
 
                 if (tag_a != tag_b) break :blk false;
 
-                inline for (info.fields) |field| {
+                inline for (fieldInfos(T)) |field| {
                     if (@field(T, field.name) == tag_a) {
                         break :blk deep_equal(
                             field.type,
@@ -267,6 +290,53 @@ pub fn deep_equal(comptime T: type, a: *const T, b: *const T) bool {
 }
 
 
+/// Copy a parsed ZON value out of its parsing arena. Defaults are copied too,
+/// so the returned value owns every pointer and can be freed field by field.
+pub fn zon_clone(gpa: mem.Allocator, value: anytype) mem.Allocator.Error!@TypeOf(value) {
+    const T = @TypeOf(value);
+    return switch (@typeInfo(T)) {
+        .pointer => |info| switch (info.size) {
+            .slice => blk: {
+                const result = try gpa.allocWithOptions(info.child, value.len, .fromByteUnitsOptional(info.attrs.@"align"), info.sentinel());
+                errdefer gpa.free(result);
+                var initialized: usize = 0;
+                errdefer for (result[0..initialized]) |item| zon_free(gpa, item, null);
+                for (value, result) |item, *dest| {
+                    dest.* = try zon_clone(gpa, item);
+                    initialized += 1;
+                }
+                break :blk result;
+            },
+            .one => blk: {
+                const result = try gpa.create(info.child);
+                errdefer gpa.destroy(result);
+                result.* = try zon_clone(gpa, value.*);
+                break :blk result;
+            },
+            .many, .c => @compileError("unsupported ZON pointer"),
+        },
+        .@"struct" => blk: {
+            var result = value;
+            errdefer zon_free(gpa, result, &value);
+            inline for (@typeInfo(T).@"struct".field_names) |name| {
+                @field(result, name) = try zon_clone(gpa, @field(value, name));
+            }
+            break :blk result;
+        },
+        .array => blk: {
+            var result = value;
+            errdefer zon_free(gpa, result, &value);
+            for (value, &result) |item, *dest| dest.* = try zon_clone(gpa, item);
+            break :blk result;
+        },
+        .@"union" => |info| if (info.tag_type != null) switch (value) {
+            inline else => |payload, tag| @unionInit(T, @tagName(tag), try zon_clone(gpa, payload)),
+        } else if (!requiresAllocator(T)) value else @compileError("unsupported ZON union"),
+        .optional => if (value) |payload| try zon_clone(gpa, payload) else null,
+        else => value,
+    };
+}
+
 pub fn zon_free(gpa: mem.Allocator, value: anytype, default: ?*const @TypeOf(value)) void {
     const Value = @TypeOf(value);
     const info = @typeInfo(Value);
@@ -280,7 +350,7 @@ pub fn zon_free(gpa: mem.Allocator, value: anytype, default: ?*const @TypeOf(val
                         if (value == ptr.*) return;
                     }
 
-                    zon_free(gpa, value.*);
+                    zon_free(gpa, value.*, null);
                     gpa.destroy(value);
                 },
                 .slice => {
@@ -303,14 +373,14 @@ pub fn zon_free(gpa: mem.Allocator, value: anytype, default: ?*const @TypeOf(val
                 if (default) |ptr| &ptr.*[i] else null
             );
         },
-        .@"struct" => |@"struct"| inline for (@"struct".fields) |field| {
+        .@"struct" => inline for (fieldInfos(Value)) |field| {
             zon_free(
                 gpa,
                 @field(value, field.name),
                 if (default) |ptr|
                     @ptrCast(@alignCast(&@field(ptr.*, field.name)))
                 else
-                    if (field.default_value_ptr) |ptr| @ptrCast(@alignCast(ptr))
+                    if (field.attrs.default_value_ptr) |ptr| @ptrCast(@alignCast(ptr))
                     else null
             );
         },
@@ -356,12 +426,12 @@ fn requiresAllocator(T: type) bool {
     return switch (@typeInfo(T)) {
         .pointer => true,
         .array => |array| return array.len > 0 and requiresAllocator(array.child),
-        .@"struct" => |@"struct"| inline for (@"struct".fields) |field| {
+        .@"struct" => inline for (fieldInfos(T)) |field| {
             if (requiresAllocator(field.type)) {
                 break true;
             }
         } else false,
-        .@"union" => |@"union"| inline for (@"union".fields) |field| {
+        .@"union" => inline for (fieldInfos(T)) |field| {
             if (requiresAllocator(field.type)) {
                 break true;
             }
@@ -370,4 +440,33 @@ fn requiresAllocator(T: type) bool {
         .vector => |vector| return vector.len > 0 and requiresAllocator(vector.child),
         else => false,
     };
+}
+
+const CloneTest = struct {
+    name: [:0]const u8 = "default",
+    items: []const union(enum) { text: []const u8, none: void },
+    optional: ?*const struct { value: []const u8 },
+    fixed: [2][]const u8,
+};
+
+fn clone_test(gpa: mem.Allocator) !void {
+    const original: CloneTest = .{
+        .items = &.{ .{ .text = "hello" }, .none },
+        .optional = &.{ .value = "nested" },
+        .fixed = .{ "first", "second" },
+    };
+    const copy = try zon_clone(gpa, original);
+    defer zon_free(gpa, copy, null);
+    try std.testing.expectEqualDeep(original, copy);
+    try std.testing.expect(copy.name.ptr != original.name.ptr);
+    try std.testing.expectEqual(@as(u8, 0), copy.name[copy.name.len]);
+    try std.testing.expect(copy.optional.? != original.optional.?);
+}
+
+test "ZON clone owns defaults, slices, tagged unions and optional pointers" {
+    try clone_test(std.testing.allocator);
+}
+
+test "ZON clone frees partial results after allocation failures" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, clone_test, .{});
 }

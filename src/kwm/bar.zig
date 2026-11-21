@@ -40,7 +40,7 @@ const widget_class = @import("widget_class.zig");
 
 const ctx = Context.get();
 const color_pattern = mvzr.compile("\\^#([0-9a-zA-Z]{8}|!)").?;
-pub var status_buffer = [1]u8 { 0 } ** 256;
+pub var status_buffer = @as([256]u8, @splat(0));
 /// The menu of the layouts on the tags of all bars. Refer to tag_menu.zig.
 var tag_menu: tag_menu_zig.State = .{};
 
@@ -65,7 +65,7 @@ hidden: bool,
 /// the sandbox. null: no name.
 sandbox_cell: ?struct { x0: i32, x1: i32, window: *Window } = null,
 
-dynamic_splits_buffer: [@typeInfo(types.BarArea).@"enum".fields.len-2]i32 = undefined,
+dynamic_splits_buffer: [@typeInfo(types.BarArea).@"enum".field_names.len-2]i32 = undefined,
 static_splits: std.ArrayList(i32) = .empty,
 dynamic_splits: std.ArrayList(i32) = undefined,
 

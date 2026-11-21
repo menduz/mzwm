@@ -155,9 +155,9 @@ fn describe_into(gpa: mem.Allocator, text: *std.ArrayList(u8), action: anytype) 
 fn append_values(gpa: mem.Allocator, text: *std.ArrayList(u8), value: anytype) !void {
     const T = @TypeOf(value);
     switch (@typeInfo(T)) {
-        .@"struct" => |info| inline for (info.fields) |field| {
+        .@"struct" => inline for (@import("config").meta.fieldInfos(T)) |field| {
             const field_value = @field(value, field.name);
-            const default = field.defaultValue();
+            const default = field.attrs.defaultValue(field.type);
             if (default == null or !std.meta.eql(field_value, default.?)) {
                 try append_values(gpa, text, field_value);
             }

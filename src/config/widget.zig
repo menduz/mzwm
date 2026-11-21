@@ -139,20 +139,20 @@ pub const click_fields = [_][]const u8 {
 
 /// Add the optional click options to the fields of `T`.
 fn clickable(comptime T: type) type {
-    const fields = @typeInfo(T).@"struct".fields;
+    const fields = @import("meta.zig").fieldInfos(T);
     const len = fields.len + click_fields.len;
 
     var names: [len][]const u8 = undefined;
     var types: [len]type = undefined;
-    var attrs: [len]Type.StructField.Attributes = undefined;
+    var attrs: [len]Type.Struct.FieldAttributes = undefined;
 
     for (0.., fields) |i, field| {
         names[i] = field.name;
         types[i] = field.type;
-        attrs[i] = Type.StructField.Attributes {
-            .@"comptime" = field.is_comptime,
-            .@"align" = field.alignment,
-            .default_value_ptr = field.default_value_ptr,
+        attrs[i] = Type.Struct.FieldAttributes {
+            .@"comptime" = field.attrs.@"comptime",
+            .@"align" = field.attrs.@"align",
+            .default_value_ptr = field.attrs.default_value_ptr,
         };
     }
 
@@ -160,7 +160,7 @@ fn clickable(comptime T: type) type {
     for (fields.len.., click_fields) |i, name| {
         names[i] = name;
         types[i] = ?[]const u8;
-        attrs[i] = Type.StructField.Attributes {
+        attrs[i] = Type.Struct.FieldAttributes {
             .@"comptime" = false,
             .@"align" = @alignOf(?[]const u8),
             .default_value_ptr = &none,

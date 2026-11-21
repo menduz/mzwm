@@ -23,7 +23,7 @@
   lib,
   callPackage,
   stdenv,
-  zig_0_16,
+  kwmZig ? callPackage ./zig.nix { },
   pkg-config,
   wayland,
   wayland-protocols,
@@ -40,7 +40,7 @@
   withBackground ? false,
 }:
 let
-  zigSystemDeps = callPackage ./zig-system-deps.nix { };
+  zigSystemDeps = callPackage ./zig-system-deps.nix { zig = kwmZig; };
 
   # The files of the build. The screenshots and the Nix files are not part of
   # it, so a new screenshot does not build kwm again.
@@ -71,7 +71,7 @@ stdenv.mkDerivation (finalAttrs: {
     inherit (finalAttrs) pname version src;
     # fcft and pixman are lazy dependencies. Only the bar uses them.
     fetchAll = true;
-    hash = "sha256-Lz/Wcy40rxN81n/mBj4YJVbyGOolHzSFZMs93T1h0oQ=";
+    hash = "sha256-8FOprauaLZ8J/a7pCUypgbBTzJu6KaH9NrM62f9ZUGM=";
   };
 
   strictDeps = true;
@@ -79,7 +79,7 @@ stdenv.mkDerivation (finalAttrs: {
   nativeBuildInputs = [
     pkg-config
     wayland-scanner
-    zig_0_16
+    kwmZig
   ];
 
   buildInputs = [
@@ -101,6 +101,9 @@ stdenv.mkDerivation (finalAttrs: {
   zigBuildFlags = [
     "--system"
     "${finalAttrs.deps}"
+    # The release compiler's native-target detection does not find the Nix
+    # interpreter in the sandbox. Set it for binaries and tests explicitly.
+    "-Ddynamic-linker=${stdenv.cc.bintools.dynamicLinker}"
     "-Dversion-string=${finalAttrs.version}"
     # A solid background covers the layer-shell surfaces on the bottom layer,
     # for example a wallpaper.

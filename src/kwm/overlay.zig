@@ -104,18 +104,18 @@ const Fonts = struct {
     cell_height: i32,
 
     fn load(name: []const u8, scale: u32) !Fonts {
-        const name_z = try ctx.gpa.dupeZ(u8, name);
+        const name_z = try ctx.gpa.dupeSentinel(u8, name, 0);
         errdefer ctx.gpa.free(name_z);
         var names = [_][*:0]const u8{ name_z.ptr, fallback_font };
 
         var buffer: [32]u8 = undefined;
         const dpi = @divFloor(scale * 96, 120);
-        const regular_attrs = try std.fmt.bufPrintZ(&buffer, "dpi={}", .{dpi});
+        const regular_attrs = try std.fmt.bufPrintSentinel(&buffer, "dpi={}", .{dpi}, 0);
         const regular = try fcft.Font.fromName(&names, regular_attrs.ptr);
         errdefer regular.destroy();
 
         var bold_buffer: [32]u8 = undefined;
-        const bold_attrs = try std.fmt.bufPrintZ(&bold_buffer, "dpi={}:weight=bold", .{dpi});
+        const bold_attrs = try std.fmt.bufPrintSentinel(&bold_buffer, "dpi={}:weight=bold", .{dpi}, 0);
         const bold = fcft.Font.fromName(&names, bold_attrs.ptr) catch regular.clone() orelse return error.NoFont;
 
         // A monospace font: the advance of "M" is the width of each cell.
@@ -305,7 +305,7 @@ fn spawn(cols: u16, rows: u16, f: *const Fonts) !struct { pid: posix.pid_t, fd: 
         // "{config}" is the configuration file of this kwm.
         const with_config = try mem.replaceOwned(u8, arena, arg, "{config}", ctx.config_path);
         const value = try mem.replaceOwned(u8, arena, with_config, "{modifiers}", modifiers_text);
-        argv[i] = try arena.dupeZ(u8, value);
+        argv[i] = try arena.dupeSentinel(u8, value, 0);
     }
 
     var env = try ctx.env.clone(arena);

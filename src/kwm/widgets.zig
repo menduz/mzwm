@@ -82,7 +82,7 @@ pub const State = struct {
     }
 };
 
-var side_states: [sides.len]std.ArrayList(State) = .{ std.ArrayList(State).empty } ** sides.len;
+var side_states: [sides.len]std.ArrayList(State) = @splat(.empty);
 var ticking = false;
 
 

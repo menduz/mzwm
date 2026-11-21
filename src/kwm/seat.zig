@@ -1417,8 +1417,8 @@ fn bar_with_tray_under_pointer(self: *const Self) ?*const anyopaque {
 
 fn to_river_modifiers(modifiers: config.Modifiers) river.SeatV1.Modifiers {
     var mods: river.SeatV1.Modifiers = .{};
-    inline for (@typeInfo(config.Modifiers).@"struct".fields) |field| {
-        @field(mods, field.name) = @field(modifiers, field.name);
+    inline for (@typeInfo(config.Modifiers).@"struct".field_names) |name| {
+        @field(mods, name) = @field(modifiers, name);
     }
     return mods;
 }
@@ -1426,7 +1426,7 @@ fn to_river_modifiers(modifiers: config.Modifiers) river.SeatV1.Modifiers {
 
 // https://codeberg.org/river/river-classic/src/commit/f0908e2d117ede7114fa85c65622b055c565c250/river/command/map.zig#L254
 fn keysym_from_name(name: []const u8) ?u32 {
-    const n = ctx.gpa.dupeZ(u8, name) catch |err| {
+    const n = ctx.gpa.dupeSentinel(u8, name, 0) catch |err| {
         log.err("dupeZ failed while call keysym_from_name: {}", .{ err });
         return null;
     };

@@ -158,7 +158,7 @@ pub fn init(
         .rwm_xkb_bindings = rwm_xkb_bindings,
         .rwm_layer_shell = rwm_layer_shell,
         .zwlr_layer_shell = zwlr_layer_shell,
-        .key_repeat = undefined,
+        .key_repeat = @as(KeyRepeat, undefined),
         .terminal_windows = .init(gpa),
         .output_states = .init(gpa),
         .mode = fmt.bufPrint(&mode_buffer, "{s}", .{ config.default_mode }) catch return error.ModeNameTooLong,
@@ -1218,7 +1218,7 @@ pub inline fn set_current_seat(self: *Self, seat: ?*Seat) void {
 
 
 pub fn spawn_child(self: *Self, argv: []const []const u8) !process.Child {
-    if (comptime builtin.mode == .Debug) {
+    if (comptime builtin.mode == .debug) {
         const cmd = try mem.join(self.gpa, " ", argv);
         defer self.gpa.free(cmd);
         log.debug("spawn child process: {s}", .{ cmd });
@@ -1246,7 +1246,7 @@ pub fn spawn_child(self: *Self, argv: []const []const u8) !process.Child {
 pub fn spawn(self: *Self, argv: []const []const u8) void {
     if (argv.len == 0) return;
 
-    if (comptime builtin.mode == .Debug) {
+    if (comptime builtin.mode == .debug) {
         const cmd = mem.join(self.gpa, " ", argv) catch unreachable;
         defer self.gpa.free(cmd);
         log.debug("spawn: `{s}`", .{ cmd });
@@ -1260,7 +1260,7 @@ pub fn spawn(self: *Self, argv: []const []const u8) void {
         log.err("allocSentinel failed: {}", .{ err });
         return;
     };
-    for (0..argv.len) |i| argv_buffer[i] = arena.dupeZ(u8, argv[i]) catch |err| {
+    for (0..argv.len) |i| argv_buffer[i] = arena.dupeSentinel(u8, argv[i], 0) catch |err| {
         log.err("dupeZ failed: {}", .{ err });
         return;
     };
@@ -1680,7 +1680,7 @@ fn rwm_listener(rwm: *river.WindowManagerV1, event: river.WindowManagerV1.Event,
         .session_locked => {
             log.debug("session locked", .{});
 
-            _ = fmt.bufPrintZ(&cache.mode, "{s}", .{ context.mode }) catch unreachable;
+            _ = fmt.bufPrintSentinel(&cache.mode, "{s}", .{ context.mode }, 0) catch unreachable;
             context.switch_mode(config.lock_mode);
         },
         .session_unlocked => {

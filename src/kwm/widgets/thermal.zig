@@ -263,7 +263,7 @@ test "the tooltip lines are in the order of the devices and the sensors" {
 }
 
 test "long names are cut" {
-    const r: Reading = .init(0, 1, 0, "n" ** 80, "l" ** 80);
+    const r: Reading = .init(0, 1, 0, &@as([80]u8, @splat('n')), &@as([80]u8, @splat('l')));
     try testing.expectEqual(max_text, r.name().len);
     try testing.expectEqual(max_text, r.label().len);
 }

@@ -61,7 +61,7 @@ pub fn run(wl_display: *wl.Display) !void {
     defer posix.close(signal_fd);
 
     // One more file descriptor for each widget script.
-    const fd_type_num = @typeInfo(FDType).@"enum".fields.len + 2 * widgets.max_widgets;
+    const fd_type_num = @typeInfo(FDType).@"enum".field_names.len + 2 * widgets.max_widgets;
     var fd_buffer: [fd_type_num]posix.pollfd = undefined;
     var fd_type_buffer: [fd_type_num]FDType = undefined;
     var poll_fds: std.ArrayList(posix.pollfd) = .initBuffer(&fd_buffer);

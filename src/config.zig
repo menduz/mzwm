@@ -296,24 +296,24 @@ pub fn load(
     defer buffer.deinit(ctx.gpa);
 
     @setEvalBranchQuota(20000);
-    var diag: std.zon.parse.Diagnostics = .{};
-    defer diag.deinit(ctx.gpa);
-    const config = zon.parse.fromSliceAlloc(
-        meta.add_default(Config, default),
-        ctx.gpa,
-        buffer.items[0..buffer.items.len-1:0],
-        &diag,
-        // After an error, zon frees the fields that it parsed. These fields
-        // can hold slices of `default`, which are not in the heap. Do not
-        // free them: kwm uses `default` after an error.
-        .{ .ignore_unknown_fields = true, .free_on_error = false },
-    ) catch |err| {
+    var arena = std.heap.ArenaAllocator.init(ctx.gpa);
+    defer arena.deinit();
+    var diag: std.zon.parse.Diagnostics = undefined;
+    const config = zon.parse.fromSlice(meta.add_default(Config, default), .{
+        .gpa = ctx.gpa,
+        .arena = arena.allocator(),
+        .source = buffer.items[0..buffer.items.len-1:0],
+        .diagnostics = &diag,
+        .ignore_unknown_fields = true,
+    }) catch |err| {
         if (err == error.ParseZon) {
-            log.err("parse configuration failed: {f}", .{ diag });
+            log.err("parse configuration failed: {f}", .{ diag.fmt(path) });
         }
         return err;
     };
-    return @as(*const Config, @ptrCast(&config)).*;
+    // Parsed strings and diagnostics belong to the temporary arena. Copy the
+    // result so reload can continue to swap and free individual fields.
+    return try meta.zon_clone(ctx.gpa, @as(*const Config, @ptrCast(&config)).*);
 }
 
 
@@ -333,21 +333,20 @@ pub fn reload(
 
     var mask: meta.field_mask(Config) = .{};
 
-    const struct_info = @typeInfo(Config).@"struct";
-    inline for (struct_info.fields) |field| {
+    inline for (@typeInfo(Config).@"struct".field_names) |name| {
         if (
             !meta.deep_equal(
-                @FieldType(Config, field.name),
-                &@field(old, field.name),
-                &@field(new, field.name),
+                @FieldType(Config, name),
+                &@field(old, name),
+                &@field(new, name),
             )
         ) {
             mem.swap(
-                @FieldType(Config, field.name),
-                &@field(old, field.name),
-                &@field(new, field.name),
+                @FieldType(Config, name),
+                &@field(old, name),
+                &@field(new, name),
             );
-            @field(mask, field.name) = true;
+            @field(mask, name) = true;
         }
     }
 
@@ -356,6 +355,7 @@ pub fn reload(
 
 
 pub fn free(gpa: mem.Allocator, config: Config) void {
+    @setEvalBranchQuota(20000);
     log.debug("free configuration", .{});
 
     meta.zon_free(
@@ -363,4 +363,8 @@ pub fn free(gpa: mem.Allocator, config: Config) void {
         @as(*const meta.add_default(Config, default), @ptrCast(&config)).*,
         null
     );
+}
+
+test "configuration metadata" {
+    _ = meta;
 }

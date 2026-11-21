@@ -74,7 +74,7 @@ pub fn read(pid: i32, buffer: *[buffer_size]u8) ?Info {
     if (pid <= 0) return null;
 
     var path_buffer: [32]u8 = undefined;
-    const path = fmt.bufPrintZ(&path_buffer, "/proc/{}/cgroup", .{ pid }) catch return null;
+    const path = fmt.bufPrintSentinel(&path_buffer, "/proc/{}/cgroup", .{ pid }, 0) catch return null;
     const cgroup = read_file(path, buffer[0..cgroup_max]) orelse return null;
 
     var json = read_file(config_path, buffer[cgroup_max..][0..config_max]);

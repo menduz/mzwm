@@ -43,7 +43,7 @@ pub fn start(exec: []const u8) ?Process {
     defer arena_allocator.deinit();
     const arena = arena_allocator.allocator();
 
-    const cmd = arena.dupeZ(u8, exec) catch return null;
+    const cmd = arena.dupeSentinel(u8, exec, 0) catch return null;
     const argv = [_:null]?[*:0]const u8 { "sh", "-c", cmd.ptr, null };
     const env_block = ctx.env.createPosixBlock(arena, .{}) catch |err| {
         log.err("createPosixBlock failed: {}", .{ err });

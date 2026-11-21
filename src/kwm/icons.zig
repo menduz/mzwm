@@ -335,7 +335,7 @@ fn load(name: []const u8, path: []const u8, size: i32, symbolic_size: i32, color
 /// The path without links, or null.
 fn real_path(path: []const u8, buffer: *[max_path]u8) ?[]const u8 {
     var path_buffer: [max_path]u8 = undefined;
-    const path_z = std.fmt.bufPrintZ(&path_buffer, "{s}", .{ path }) catch return null;
+    const path_z = std.fmt.bufPrintSentinel(&path_buffer, "{s}", .{ path }, 0) catch return null;
     const real = std.c.realpath(path_z.ptr, buffer) orelse return null;
     return mem.span(real);
 }
@@ -689,7 +689,7 @@ const resvg = struct {
 
 
 fn read_svg(path: []const u8, size: i32) !?*pixman.Image {
-    const path_z = try ctx.gpa.dupeZ(u8, path);
+    const path_z = try ctx.gpa.dupeSentinel(u8, path, 0);
     defer ctx.gpa.free(path_z);
 
     const options = resvg.resvg_options_create() orelse return error.OutOfMemory;

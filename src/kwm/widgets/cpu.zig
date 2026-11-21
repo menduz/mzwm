@@ -29,7 +29,7 @@ const Counters = struct {
 /// The counters of the last update: of all the cores, and of each core.
 pub const Data = struct {
     all: Counters = .{},
-    cores: [max_cores]Counters = .{ Counters{} } ** max_cores,
+    cores: [max_cores]Counters = @splat(.{}),
 };
 
 /// The CPU use since the last update.
@@ -71,7 +71,7 @@ pub fn parse(stat: []const u8, data: *Data, cores: []u8) !Use {
         const name = fields.next() orelse continue;
         if (!mem.startsWith(u8, name, "cpu")) break;
 
-        var values: [8]u64 = .{ 0 } ** 8;
+        var values: [8]u64 = @splat(0);
         for (&values) |*v| {
             v.* = fmt.parseInt(u64, fields.next() orelse break, 10) catch 0;
         }

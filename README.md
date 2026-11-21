@@ -78,7 +78,7 @@ See the default [configuration](./config.def.zon) file for detailed features.
 
 ## Build
 
-Requires zig 0.16.x.
+Requires Zig 0.17.1. The Nix package and development shell pin this version.
 
 ```
 zig build -Doptimize=ReleaseSafe

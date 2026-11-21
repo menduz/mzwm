@@ -93,7 +93,7 @@ fn find_battery(buffer: []u8) ?[]const u8 {
 /// line. null: no file.
 fn read(name: []const u8, file: []const u8, buffer: []u8) ?[]const u8 {
     var path_buffer: [128]u8 = undefined;
-    const path = fmt.bufPrintZ(&path_buffer, "/sys/class/power_supply/{s}/{s}", .{ name, file }) catch return null;
+    const path = fmt.bufPrintSentinel(&path_buffer, "/sys/class/power_supply/{s}/{s}", .{ name, file }, 0) catch return null;
     const text = common.read_file(path.ptr, buffer) catch return null;
     return mem.trim(u8, text, " \n");
 }

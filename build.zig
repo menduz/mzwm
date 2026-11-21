@@ -36,7 +36,7 @@ pub fn build(b: *std.Build) void {
             var ret: u8 = undefined;
 
             const git_describe_long = b.runAllowFail(
-                &.{ "git", "-C", b.build_root.path orelse ".", "describe", "--long" },
+                &.{ "git", "-C", b.root.joinString(b.allocator, "") catch @panic("OOM"), "describe", "--long" },
                 &ret,
                 .ignore,
             ) catch break :blk version;
@@ -326,9 +326,7 @@ pub fn build(b: *std.Build) void {
 
     // This allows the user to pass arguments to the application in the build
     // command itself, like this: `zig build run -- arg1 arg2 etc`
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
+    run_cmd.addPassthruArgs();
 
     const config_tests = b.addTest(.{ .root_module = config_mod });
     const run_config_tests = b.addRunArtifact(config_tests);

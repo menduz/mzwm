@@ -17,7 +17,7 @@ const ctx = common.ctx;
 
 /// The counters of the last update.
 pub const Data = struct {
-    ifname: [linux.IFNAMESIZE]u8 = .{ 0 } ** linux.IFNAMESIZE,
+    ifname: [linux.IFNAMESIZE]u8 = @splat(0),
     rx: u64 = 0,
     tx: u64 = 0,
     /// Awake-clock milliseconds. 0 before the first update.

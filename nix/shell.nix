@@ -1,8 +1,9 @@
 # The development shell. `nix develop` gives the commands that build kwm and
 # take the screenshots.
 {
+  callPackage,
   mkShell,
-  zig_0_16,
+  kwmZig ? callPackage ./zig.nix { },
   pkg-config,
   nixfmt-rfc-style,
   screenshot,
@@ -10,7 +11,7 @@
 }:
 mkShell {
   packages = [
-    zig_0_16
+    kwmZig
     pkg-config
     nixfmt-rfc-style
     screenshot
