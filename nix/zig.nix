@@ -40,6 +40,34 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     runHook postInstall
   '';
 
+  # `zig build` compiles its build runner (the maker) with LLVM on one core,
+  # in about 80 seconds, and keeps it in the global cache. Each Nix build
+  # starts with an empty global cache. Thus compile the maker here one time,
+  # with the zig of $out (the cache key contains its lib directory). The setup
+  # hook copies this cache into the global cache of each build. Zig does a
+  # check of the contents of the files, thus the cache stays valid after Nix
+  # changes their times.
+  postFixup = ''
+    mkdir "$TMPDIR/empty"
+    echo 'pub fn build(_: *@import("std").Build) void {}' > "$TMPDIR/empty/build.zig"
+    (
+      cd "$TMPDIR/empty"
+      HOME="$TMPDIR" ZIG_GLOBAL_CACHE_DIR="$out/share/zig-global-cache" "$out/bin/zig" build
+    )
+    rm -rf "$out/share/zig-global-cache/tmp"
+
+    cat >> "$out/nix-support/setup-hook" <<EOF
+
+    zigCopyGlobalCache() {
+      if [ -n "\''${ZIG_GLOBAL_CACHE_DIR-}" ]; then
+        cp -r "$out/share/zig-global-cache/." "\$ZIG_GLOBAL_CACHE_DIR"
+        chmod -R u+w "\$ZIG_GLOBAL_CACHE_DIR"
+      fi
+    }
+    postConfigureHooks+=(zigCopyGlobalCache)
+    EOF
+  '';
+
   passthru.fetchDeps =
     args:
     (zig_0_16.fetchDeps args).overrideAttrs {
