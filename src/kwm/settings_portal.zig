@@ -9,6 +9,11 @@
 //! program of the focused window from this icon theme (icons.set_app_theme).
 //! GTK_THEME does not change the icon theme: kwm always reads this key.
 //!
+//! kwm also follows the color scheme (org.freedesktop.appearance
+//! color-scheme): a window of a sandbox that follows the color scheme of the
+//! host uses the dark GTK theme of the sandbox when the host prefers dark
+//! (theme.set_prefer_dark).
+//!
 //! kwm uses the connection of the tray: tray.zig calls `attach` after it
 //! connects and `detach` before it disconnects. Thus kwm follows the theme
 //! only with the tray.
@@ -33,12 +38,14 @@ var signal_slot: ?*sd.Slot = null;
 
 /// A call of ReadOne, for a key of portal_setting.zig.
 const Read = struct {
+    namespace: [:0]const u8 = portal_setting.namespace,
     key: [:0]const u8,
     slot: ?*sd.Slot = null,
 };
 var reads = [_]Read {
     .{ .key = portal_setting.key },
     .{ .key = portal_setting.icon_key },
+    .{ .namespace = portal_setting.appearance_namespace, .key = portal_setting.color_scheme_key },
 };
 
 
@@ -59,7 +66,7 @@ pub fn attach(bus: *sd.Bus) void {
             sd.sd_bus_call_method_async(
                 bus, &read.slot, portal_name, portal_path, settings_interface,
                 "ReadOne", on_read_one, read, "ss",
-                portal_setting.namespace.ptr, read.key.ptr,
+                read.namespace.ptr, read.key.ptr,
             ),
             "call ReadOne",
         ) catch continue;
@@ -73,6 +80,15 @@ pub fn detach() void {
 }
 
 
+/// Read a number in a variant.
+fn read_variant_u32(m: *sd.Message) ?u32 {
+    if (sd.sd_bus_message_enter_container(m, 'v', "u") <= 0) return null;
+    var n: u32 = 0;
+    if (sd.sd_bus_message_read_basic(m, 'u', @ptrCast(&n)) <= 0) return null;
+    return n;
+}
+
+
 /// Read a string in a variant.
 fn read_variant_string(m: *sd.Message) ?[]const u8 {
     if (sd.sd_bus_message_enter_container(m, 'v', "s") <= 0) return null;
@@ -82,7 +98,16 @@ fn read_variant_string(m: *sd.Message) ?[]const u8 {
 }
 
 
-fn apply(namespace: []const u8, key: []const u8, value: []const u8) void {
+/// Apply the setting (namespace, key) with the value in the variant of `m`.
+fn apply(namespace: []const u8, key: []const u8, m: *sd.Message) void {
+    if (portal_setting.is_color_scheme(namespace, key)) {
+        const value = read_variant_u32(m) orelse return;
+        log.info("color scheme from the settings portal: {}", .{ value });
+        theme.set_prefer_dark(portal_setting.prefer_dark(value));
+        return;
+    }
+
+    const value = read_variant_string(m) orelse return;
     if (portal_setting.gtk_theme(namespace, key, value)) |name| {
         log.info("GTK theme from the settings portal: {s}", .{ name });
         theme.set_gtk_theme(name);
@@ -98,8 +123,7 @@ fn on_setting_changed(m: *sd.Message, _: ?*anyopaque, _: *sd.Error) callconv(.c)
     var namespace: ?[*:0]const u8 = null;
     var key: ?[*:0]const u8 = null;
     if (sd.sd_bus_message_read(m, "ss", &namespace, &key) <= 0) return 0;
-    const value = read_variant_string(m) orelse return 0;
-    apply(mem.span(namespace orelse return 0), mem.span(key orelse return 0), value);
+    apply(mem.span(namespace orelse return 0), mem.span(key orelse return 0), m);
     return 0;
 }
 
@@ -114,7 +138,6 @@ fn on_read_one(m: *sd.Message, userdata: ?*anyopaque, _: *sd.Error) callconv(.c)
         log.warn("read {s} from the settings portal failed: {s}", .{ read.key, err.message orelse err.name orelse "unknown error" });
         return 0;
     }
-    const value = read_variant_string(m) orelse return 0;
-    apply(portal_setting.namespace, read.key, value);
+    apply(read.namespace, read.key, m);
     return 0;
 }

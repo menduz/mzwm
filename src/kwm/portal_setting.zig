@@ -15,6 +15,26 @@ pub const key = "gtk-theme";
 pub const icon_key = "icon-theme";
 
 
+/// The setting of the color scheme: 1 is dark, 2 is light, 0 is no
+/// preference. The sandboxes follow it (followColorScheme of the sandbox
+/// launcher), thus kwm follows it for the windows of the sandboxes.
+pub const appearance_namespace = "org.freedesktop.appearance";
+pub const color_scheme_key = "color-scheme";
+
+
+/// The setting is the color scheme. Its value is a number, not a string.
+pub fn is_color_scheme(setting_namespace: []const u8, setting_key: []const u8) bool {
+    return mem.eql(u8, setting_namespace, appearance_namespace) and mem.eql(u8, setting_key, color_scheme_key);
+}
+
+
+/// The color scheme `value` prefers dark. No preference is light, as for
+/// GTK.
+pub fn prefer_dark(value: u32) bool {
+    return value == 1;
+}
+
+
 /// The name of the GTK theme in a setting of the settings portal. null: the
 /// setting is an other one, or the name is empty.
 pub fn gtk_theme(setting_namespace: []const u8, setting_key: []const u8, value: []const u8) ?[]const u8 {
@@ -56,4 +76,13 @@ test "icon_theme: the icon theme key" {
     try testing.expectEqual(@as(?[]const u8, null), icon_theme(namespace, key, "win-classic-dark"));
     try testing.expectEqual(@as(?[]const u8, null), icon_theme("org.freedesktop.appearance", icon_key, "x"));
     try testing.expectEqual(@as(?[]const u8, null), icon_theme(namespace, icon_key, " "));
+}
+
+test "color scheme: the key and the values" {
+    try testing.expect(is_color_scheme(appearance_namespace, color_scheme_key));
+    try testing.expect(!is_color_scheme(namespace, color_scheme_key));
+    try testing.expect(!is_color_scheme(appearance_namespace, "accent-color"));
+    try testing.expect(prefer_dark(1));
+    try testing.expect(!prefer_dark(0));
+    try testing.expect(!prefer_dark(2));
 }

@@ -38,7 +38,12 @@ pub const default_color: u32 = 0xc01c28ff;
 /// launcher:
 ///
 ///     {"host": {"color": "#rrggbb"},
-///      "environments": {"<name>": {"color": "#rrggbb", "gtkTheme": "..."}}}
+///      "environments": {"<name>": {"color": "#rrggbb", "gtkTheme": "...",
+///                                  "gtkThemeDark": "..."}}}
+///
+/// gtkThemeDark is the GTK theme of a sandbox that follows the color scheme
+/// of the host: kwm uses it when the host prefers dark. Refer to
+/// `gtk_theme_of`.
 pub const config_path = "/etc/sandboxes/config.json";
 
 /// The size of the buffer that `read` needs: the cgroup file, the
@@ -55,6 +60,9 @@ pub const Info = struct {
     /// 0xRRGGBBAA.
     color: u32,
     gtk_theme: ?[]const u8 = null,
+    /// The GTK theme of the sandbox when the host prefers dark. null: the
+    /// sandbox does not follow the color scheme of the host.
+    gtk_theme_dark: ?[]const u8 = null,
     /// The process is in no sandbox slice. A sandbox has a slice, also a
     /// sandbox with the name "host".
     host: bool = false,
@@ -104,6 +112,7 @@ pub fn resolve(allocator: mem.Allocator, cgroup: []const u8, json: ?[]const u8) 
         if (parse_config(allocator, json orelse "", name)) |environment| {
             info.color = color_of(environment);
             info.gtk_theme = environment.gtkTheme;
+            info.gtk_theme_dark = environment.gtkThemeDark;
         }
         return info;
     }
@@ -172,7 +181,19 @@ fn valid_name(name: []const u8) bool {
 const Environment = struct {
     color: ?[]const u8 = null,
     gtkTheme: ?[]const u8 = null,
+    gtkThemeDark: ?[]const u8 = null,
 };
+
+
+/// The GTK theme of a window of a sandbox: `dark` when the host prefers dark
+/// and the sandbox has a dark theme, else `light`. The programs in the
+/// sandbox select their scheme from the same color scheme of the host.
+pub fn gtk_theme_of(light: ?[]const u8, dark: ?[]const u8, prefer_dark: bool) ?[]const u8 {
+    if (prefer_dark) {
+        if (dark) |name| return name;
+    }
+    return light;
+}
 
 
 /// The values of the sandbox `name` in the JSON text of `config_path`. The
@@ -257,7 +278,8 @@ test "parse_cgroup: a bad name does not match" {
 test "parse_config: the color and the GTK theme of a sandbox" {
     const json =
         \\{"version": 1, "environments": {
-        \\  "work": {"color": "#3a7d44", "gtkTheme": "win-classic-sandbox-work", "network": "full"},
+        \\  "work": {"color": "#3a7d44", "gtkTheme": "win-classic-sandbox-work", "network": "full",
+        \\    "gtkThemeDark": "win-classic-sandbox-work-dark"},
         \\  "tmp": {"color": "#c01c28", "gtkTheme": null}
         \\}}
     ;
@@ -267,9 +289,11 @@ test "parse_config: the color and the GTK theme of a sandbox" {
     const work = parse_config(arena.allocator(), json, "work").?;
     try testing.expectEqualStrings("#3a7d44", work.color.?);
     try testing.expectEqualStrings("win-classic-sandbox-work", work.gtkTheme.?);
+    try testing.expectEqualStrings("win-classic-sandbox-work-dark", work.gtkThemeDark.?);
 
     const tmp = parse_config(arena.allocator(), json, "tmp").?;
     try testing.expectEqual(@as(?[]const u8, null), tmp.gtkTheme);
+    try testing.expectEqual(@as(?[]const u8, null), tmp.gtkThemeDark);
 
     try testing.expectEqual(@as(?Environment, null), parse_config(arena.allocator(), json, "other"));
     try testing.expectEqual(@as(?Environment, null), parse_config(arena.allocator(), "not json", "work"));
@@ -293,7 +317,8 @@ test "parse_config: the host block" {
 
 const test_config =
     \\{"host": {"color": "#808080"}, "environments": {
-    \\  "work": {"color": "#3a7d44", "gtkTheme": "win-classic-sandbox-work"},
+    \\  "work": {"color": "#3a7d44", "gtkTheme": "win-classic-sandbox-work",
+    \\    "gtkThemeDark": "win-classic-sandbox-work-dark"},
     \\  "web": {"color": "green"}
     \\}}
 ;
@@ -308,6 +333,7 @@ test "resolve: a sandbox has the values of the configuration and a label" {
     try testing.expectEqualStrings("work", info.name);
     try testing.expectEqual(@as(u32, 0x3a7d44ff), info.color);
     try testing.expectEqualStrings("win-classic-sandbox-work", info.gtk_theme.?);
+    try testing.expectEqualStrings("win-classic-sandbox-work-dark", info.gtk_theme_dark.?);
     try testing.expect(!info.host);
     try testing.expect(info.has_label());
 }
@@ -376,4 +402,12 @@ test "dim and text_color" {
     try testing.expectEqual(@as(u32, 0x1d3e22ff), dim(0x3a7d44ff));
     try testing.expectEqual(@as(u32, 0xffffffff), text_color(0x3a7d44ff));
     try testing.expectEqual(@as(u32, 0x000000ff), text_color(0xf29718ff));
+}
+
+test "gtk_theme_of: the dark theme only when the host prefers dark" {
+    try testing.expectEqualStrings("light", gtk_theme_of("light", "dark", false).?);
+    try testing.expectEqualStrings("dark", gtk_theme_of("light", "dark", true).?);
+    // A sandbox that does not follow the color scheme keeps its theme.
+    try testing.expectEqualStrings("light", gtk_theme_of("light", null, true).?);
+    try testing.expectEqual(@as(?[]const u8, null), gtk_theme_of(null, null, true));
 }

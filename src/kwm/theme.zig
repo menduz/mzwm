@@ -28,6 +28,10 @@ var colors: Colors = .empty;
 /// The colors of other GTK themes, by theme name. The window of a sandbox
 /// can have its own GTK_THEME. Refer to sandbox.zig.
 var other_themes: std.StringHashMapUnmanaged(Colors) = .empty;
+/// The host prefers a dark color scheme (color-scheme of the settings
+/// portal). A window of a sandbox that follows the color scheme then uses
+/// the dark GTK theme of the sandbox. Refer to sandbox.gtk_theme_of.
+pub var prefer_dark: bool = false;
 
 
 pub fn init() void {
@@ -70,6 +74,16 @@ pub fn set_gtk_theme(name: []const u8) void {
     load(&colors, name);
     ctx.desktop_color_changed();
     if (ctx.cfg.bar.gtk_colors != null or bar_caption()) ctx.bar_colors_changed();
+    ctx.manage_dirty(@src());
+}
+
+
+/// The color scheme of the host changed. Draw the borders and the title
+/// bars of the sandboxes again.
+pub fn set_prefer_dark(dark: bool) void {
+    if (prefer_dark == dark) return;
+    prefer_dark = dark;
+    if (bar_caption()) ctx.bar_colors_changed();
     ctx.manage_dirty(@src());
 }
 

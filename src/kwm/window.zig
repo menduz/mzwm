@@ -136,6 +136,9 @@ sandbox_name: ?[]const u8 = null,
 sandbox_color: u32 = sandbox.default_color,
 /// The GTK theme of the sandbox. The raised border uses its colors.
 sandbox_gtk_theme: ?[]const u8 = null,
+/// The GTK theme of the sandbox when the host prefers dark. Refer to
+/// `sandbox_theme`.
+sandbox_gtk_theme_dark: ?[]const u8 = null,
 /// The window shows the label of the sandbox. A window on the host has no
 /// label.
 sandbox_has_label: bool = false,
@@ -952,7 +955,7 @@ fn shows_outline(self: *const Self) bool {
 fn border_bevel(self: *const Self) config.Bevel {
     if (self.sandbox_name == null) return theme.bevel(self.border_focused);
 
-    var bevel = theme.bevel_of(self.sandbox_gtk_theme, self.border_focused);
+    var bevel = theme.bevel_of(self.sandbox_theme(), self.border_focused);
     bevel.outline = self.border_color(bevel.outline);
     return bevel;
 }
@@ -982,6 +985,9 @@ fn read_sandbox(self: *Self) void {
     if (info.gtk_theme) |name| {
         self.sandbox_gtk_theme = ctx.gpa.dupe(u8, name) catch null;
     }
+    if (info.gtk_theme_dark) |name| {
+        self.sandbox_gtk_theme_dark = ctx.gpa.dupe(u8, name) catch null;
+    }
 
     if (comptime build_options.bar_enabled) {
         if (self.output) |output| output.bar.damage(.title);
@@ -992,8 +998,10 @@ fn read_sandbox(self: *Self) void {
 fn clear_sandbox(self: *Self) void {
     if (self.sandbox_name) |name| ctx.gpa.free(name);
     if (self.sandbox_gtk_theme) |name| ctx.gpa.free(name);
+    if (self.sandbox_gtk_theme_dark) |name| ctx.gpa.free(name);
     self.sandbox_name = null;
     self.sandbox_gtk_theme = null;
+    self.sandbox_gtk_theme_dark = null;
     self.sandbox_color = sandbox.default_color;
     self.sandbox_has_label = false;
 }
@@ -1126,7 +1134,14 @@ pub fn title_sandbox(self: *const Self) ?TitleBar.Sandbox {
 /// The GTK theme of the title, in the title bar and in the bar. A window of a
 /// sandbox uses the GTK theme of its sandbox, as its border.
 pub fn title_theme(self: *const Self) ?[]const u8 {
-    return if (self.sandbox_name != null) self.sandbox_gtk_theme else null;
+    return if (self.sandbox_name != null) self.sandbox_theme() else null;
+}
+
+
+/// The GTK theme of the sandbox in the color scheme of the host: the dark
+/// theme when the host prefers dark. Refer to sandbox.gtk_theme_of.
+fn sandbox_theme(self: *const Self) ?[]const u8 {
+    return sandbox.gtk_theme_of(self.sandbox_gtk_theme, self.sandbox_gtk_theme_dark, theme.prefer_dark);
 }
 
 

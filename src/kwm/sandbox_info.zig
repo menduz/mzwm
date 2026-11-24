@@ -35,7 +35,7 @@ const line_width = 64;
 const skipped_keys = [_][]const u8{
     "backend",        "backendArgs", "bin",         "color",
     "configMounts",   "description", "env",         "files",
-    "gtkTheme",       "homeDirectory", "homePatterns", "hostname",
+    "gtkTheme",       "gtkThemeDark", "homeDirectory", "homePatterns", "hostname",
     "opensnitch",     "passEnv",     "socksProxy",
     // These limit the sandbox.
     "cleanTmp",       "disableNetworking", "privacyFilter",
